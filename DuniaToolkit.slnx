@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Dunia.Cli/Dunia.Cli.csproj" />
+  <Project Path="Dunia.Formats/Dunia.Formats.csproj" />
+  <Project Path="Dunia.Formats.Tests/Dunia.Formats.Tests.csproj" />
+  <Project Path="Dunia.Toolkit/Dunia.Toolkit.csproj" />
+</Solution>
