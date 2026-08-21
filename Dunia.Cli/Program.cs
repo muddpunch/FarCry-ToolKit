@@ -1,3 +1,4 @@
+using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
 using Dunia.Formats.Textures;
 
@@ -61,6 +62,23 @@ internal static class Program
             Console.WriteLine($"version.le={prefix.VersionLittleEndian}");
             Console.WriteLine($"version.be={prefix.VersionBigEndian}");
             Console.WriteLine($"prefix.hex={prefix.Hex}");
+
+            if (prefix.VersionLittleEndian == FatV10IndexSummaryReader.Version)
+            {
+                FatV10IndexSummary summary = FatV10IndexSummaryReader.Read(input);
+                Console.WriteLine($"platform={summary.Platform}");
+                Console.WriteLine($"entries={summary.EntryCount}");
+                Console.WriteLine($"entry.size={summary.EntrySize}");
+                Console.WriteLine($"layout.valid=true");
+
+                string datPath = Path.ChangeExtension(fatPath, ".dat");
+                long? datLength = File.Exists(datPath) ? new FileInfo(datPath).Length : null;
+                FatV10Index index = FatV10IndexReader.Read(input, datLength);
+                Console.WriteLine($"entries.lz4={index.Entries.Count(entry => entry.CompressionScheme == FatV10CompressionScheme.Lz4)}");
+                Console.WriteLine($"entries.encrypted={index.Entries.Count(entry => entry.IsEncrypted)}");
+                Console.WriteLine($"dat.bounds.valid={datLength.HasValue}");
+            }
+
             return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)

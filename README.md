@@ -66,6 +66,8 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 |---|---|
 | .NET 9 solution and project boundaries | Implemented |
 | FAT prefix recon probe | Implemented |
+| Validated FAT v10 envelope/entry-count reader | Implemented |
+| FAT v10 entry metadata reader | Implemented |
 | Atomic `.original` backup primitive | Implemented |
 | Complete FAT/DAT pair backup preflight | Implemented |
 | Pending-change set with Apply/Discard foundations | Implemented |
@@ -114,6 +116,8 @@ Warnings are treated as errors.
 - `PendingChangeSet<TKey, TChange>` provides ordered, thread-safe staging and discard snapshots.
 - `ReplacementStagingStore` snapshots replacement files and verifies their length and SHA-256 before use.
 - `FatPrefixProbe` reports raw archive prefix evidence without assuming an unverified FAT v10 layout.
+- `FatV10IndexSummaryReader` validates the confirmed 24-byte header, 20-byte entry envelope, and 8-byte trailer.
+- `FatV10IndexReader` decodes hashes, sizes, offsets, encryption flags, and LZ4/none metadata with paired-DAT bounds checks.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
 ## Recon probe
@@ -158,7 +162,8 @@ Game-derived fixtures must remain local. Do not commit Ubisoft assets, extracted
 
 ## Prior art and licensing
 
-- [Gibbed.Dunia2](https://github.com/gibbed/Gibbed.Dunia2) is zlib-licensed and provides the permissive architectural baseline through FAT v9.
+- [Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia) is zlib-licensed and provides explicit FAT v10/v11 serializers plus FC5 pack/unpack projects.
+- [Gibbed.Dunia2](https://github.com/gibbed/Gibbed.Dunia2) is the legacy zlib-licensed baseline through FAT v9.
 - [FCBConverter](https://github.com/JakubMarecek/FCBConverter) supports later Far Cry games but is GPLv3. Treat it as a behavioral oracle unless this project explicitly adopts GPLv3.
 - [FC5ArchiveViewer](https://github.com/JakubMarecek/FC5ArchiveViewer) is GPLv3 and must not be copied into a permissively licensed implementation.
 - [WildlandsToolkit](https://github.com/AlphaGlyph1371/WildlandsToolkit) provides architecture and UX inspiration only; its `.forge` parsing code is unrelated to Dunia FAT/DAT archives.

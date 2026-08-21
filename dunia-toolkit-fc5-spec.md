@@ -51,7 +51,8 @@ DuniaToolkit.slnx
 ### 4.1 Archive: `.fat` / `.dat` pairs
 - `.fat` = index/header, `.dat` = payload blob. Same archive family across FC3→FC6 (LZ4-based compression by the FC5 era).
 - Multiple `.dat/.fat` pairs per install, one per subsystem — e.g. `common.dat/fat` (menus/HUD), `ige.dat/fat` (in-game editor). Full filename catalogue documented at mods.farcry.info/fc5 — pull that list rather than guessing names.
-- **Permissive reference implementation:** **github.com/gibbed/Gibbed.Dunia2** is zlib-licensed and contains `Gibbed.Dunia2.FileFormats.Big`, including `Big.Entry` and `Big.SubFatEntry`. Its archive implementation supports versions through v9; FC5/FCND use v10, so it is architectural prior art rather than a complete FC5 implementation.
+- **Primary permissive reference implementation:** **github.com/gibbed/Gibbed.Dunia** is zlib-licensed and contains explicit Far Cry 5/New Dawn/6 projects plus FAT v10/v11 serializers, compression mappings, hashing, unpacking, and packing code.
+- **Legacy permissive reference:** **github.com/gibbed/Gibbed.Dunia2** is also zlib-licensed but its archive implementation stops at v9.
 - **GPL reference implementation:** **github.com/JakubMarecek/FCBConverter** extends the Gibbed lineage for FC5/FCND, but the repository is GPLv3. Treat it as a behavioral oracle only unless this toolkit intentionally adopts GPLv3; do not copy its source or bundled data into a permissively licensed build.
 - Secondary reference: **github.com/JakubMarecek/FC5ArchiveViewer** — browses FC5/New Dawn `.dat/.fat` without unpacking. **License is GPLv3** (copyleft) — unlike the Gibbed code above, don't lift code verbatim from this one if the new toolkit is meant to ship under a permissive license. Fine to read for structural understanding, re-implement independently.
 - No-source reference binaries (useful to generate ground-truth unpacked output to diff your own parser against): "Far Cry 5/New Dawn .dat/.fat Unpack/Repack Tool" and the Ekey FC5 FAT/DAT tool, both circulated on ZenHAX/ResHax.
@@ -98,6 +99,7 @@ Flag these explicitly to whoever/whatever implements this — they're research s
 |---|---|---|---|
 | WildlandsToolkit | Architecture + UX to mirror (not format code) | MIT | github.com/AlphaGlyph1371/WildlandsToolkit |
 | Gibbed.Dunia2 | Original Dunia2 archive/FCB format code | zlib-style, permissive | github.com/gibbed/Gibbed.Dunia2 |
+| Gibbed.Dunia | Current FC5/New Dawn/FC6 FAT serializers, hashing, pack/unpack code | zlib-style, permissive | github.com/gibbed/Gibbed.Dunia |
 | FCBConverter | FC5/New Dawn/FC6 archive + FCB + texture conversion; behavioral oracle only | **GPLv3 — copyleft, don't copy verbatim or bundle its data** | github.com/JakubMarecek/FCBConverter |
 | FC5ArchiveViewer | FC5/New Dawn archive browsing reference | **GPLv3 — copyleft, don't copy verbatim** | github.com/JakubMarecek/FC5ArchiveViewer |
 | mods.farcry.info/fc5 | Data-folder/file catalogue, modding basics | community wiki | mods.farcry.info/fc5 |
