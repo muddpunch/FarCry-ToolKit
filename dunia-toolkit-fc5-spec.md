@@ -51,13 +51,14 @@ DuniaToolkit.slnx
 ### 4.1 Archive: `.fat` / `.dat` pairs
 - `.fat` = index/header, `.dat` = payload blob. Same archive family across FC3→FC6 (LZ4-based compression by the FC5 era).
 - Multiple `.dat/.fat` pairs per install, one per subsystem — e.g. `common.dat/fat` (menus/HUD), `ige.dat/fat` (in-game editor). Full filename catalogue documented at mods.farcry.info/fc5 — pull that list rather than guessing names.
-- **Primary reference implementation** (permissive, zlib-style license — "granted to anyone, for any purpose including commercial, alter and redistribute freely"): the `Gibbed.Dunia2.FileFormats.Big` namespace inside **github.com/JakubMarecek/FCBConverter** (a fork lineage of **github.com/gibbed/Gibbed.Dunia2**). Confirmed real types include `Big.Entry` and `Big.SubFatEntry` — read the actual tree in that repo before committing to a class shape rather than guessing further from this doc.
+- **Permissive reference implementation:** **github.com/gibbed/Gibbed.Dunia2** is zlib-licensed and contains `Gibbed.Dunia2.FileFormats.Big`, including `Big.Entry` and `Big.SubFatEntry`. Its archive implementation supports versions through v9; FC5/FCND use v10, so it is architectural prior art rather than a complete FC5 implementation.
+- **GPL reference implementation:** **github.com/JakubMarecek/FCBConverter** extends the Gibbed lineage for FC5/FCND, but the repository is GPLv3. Treat it as a behavioral oracle only unless this toolkit intentionally adopts GPLv3; do not copy its source or bundled data into a permissively licensed build.
 - Secondary reference: **github.com/JakubMarecek/FC5ArchiveViewer** — browses FC5/New Dawn `.dat/.fat` without unpacking. **License is GPLv3** (copyleft) — unlike the Gibbed code above, don't lift code verbatim from this one if the new toolkit is meant to ship under a permissive license. Fine to read for structural understanding, re-implement independently.
 - No-source reference binaries (useful to generate ground-truth unpacked output to diff your own parser against): "Far Cry 5/New Dawn .dat/.fat Unpack/Repack Tool" and the Ekey FC5 FAT/DAT tool, both circulated on ZenHAX/ResHax.
 
 ### 4.2 FCB — "FarCryBinary"
 - Binary tree format for entities/archetypes/config values. Tags are hash-keyed, not string-named — same "hash → known name" problem Wildlands solved for its own `.forge` format.
-- Reference: **github.com/JakubMarecek/FCBConverter** — full C# source, actively maintained against FC5 through FC6, ships a large filename/hash list. Reuse that list instead of re-deriving hashes from scratch.
+- Reference: **github.com/JakubMarecek/FCBConverter** — full GPLv3 C# source, maintained against FC5 through FC6, and ships a large filename/hash list. Do not redistribute that list until its licensing/provenance is reviewed.
 - Where it lives: `entityarchetypelibrary\*.ARK.FCB` = archetypes (vehicle, enemy soldier, prop — behavior + model + texture + sound bindings in one record).
 
 ### 4.3 Textures: `.xbt`
@@ -97,7 +98,7 @@ Flag these explicitly to whoever/whatever implements this — they're research s
 |---|---|---|---|
 | WildlandsToolkit | Architecture + UX to mirror (not format code) | MIT | github.com/AlphaGlyph1371/WildlandsToolkit |
 | Gibbed.Dunia2 | Original Dunia2 archive/FCB format code | zlib-style, permissive | github.com/gibbed/Gibbed.Dunia2 |
-| FCBConverter | Actively maintained FC5/New Dawn/FC6 archive + FCB + texture conversion, full source, hash/filename list | permissive (built on Gibbed's license) | github.com/JakubMarecek/FCBConverter |
+| FCBConverter | FC5/New Dawn/FC6 archive + FCB + texture conversion; behavioral oracle only | **GPLv3 — copyleft, don't copy verbatim or bundle its data** | github.com/JakubMarecek/FCBConverter |
 | FC5ArchiveViewer | FC5/New Dawn archive browsing reference | **GPLv3 — copyleft, don't copy verbatim** | github.com/JakubMarecek/FC5ArchiveViewer |
 | mods.farcry.info/fc5 | Data-folder/file catalogue, modding basics | community wiki | mods.farcry.info/fc5 |
 | ZenHAX / ResHax threads | No-source unpack/repack binaries for ground-truth diffing | binary-only tools | search "Far Cry 5 dat fat" on zenhax.com / reshax.com |

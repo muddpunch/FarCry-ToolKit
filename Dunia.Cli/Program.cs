@@ -1,3 +1,5 @@
+using Dunia.Formats.Archives.Recon;
+
 namespace Dunia.Cli;
 
 internal static class Program
@@ -9,6 +11,7 @@ internal static class Program
           dunia <command> [options]
 
         Commands:
+          probe     Print an archive prefix for Phase-0 recon
           list      List archive entries
           entry     Inspect an archive entry
           get       Extract an archive entry
@@ -21,8 +24,40 @@ internal static class Program
 
     public static int Main(string[] args)
     {
-        Console.WriteLine(Usage);
-        return args.Length == 0 || args[0] is "help" or "--help" or "-h" ? 0 : 2;
+        if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
+        {
+            Console.WriteLine(Usage);
+            return 0;
+        }
+
+        if (args is ["probe", var fatPath])
+        {
+            return Probe(fatPath);
+        }
+
+        Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
+        return 2;
+    }
+
+    private static int Probe(string fatPath)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(fatPath);
+            FatPrefix prefix = FatPrefixProbe.Read(input);
+
+            Console.WriteLine($"path={Path.GetFullPath(fatPath)}");
+            Console.WriteLine($"length={input.Length}");
+            Console.WriteLine($"magic.ascii={prefix.MagicAscii}");
+            Console.WriteLine($"version.le={prefix.VersionLittleEndian}");
+            Console.WriteLine($"version.be={prefix.VersionBigEndian}");
+            Console.WriteLine($"prefix.hex={prefix.Hex}");
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
     }
 }
-
