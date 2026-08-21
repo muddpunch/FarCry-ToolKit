@@ -1,4 +1,5 @@
 using Dunia.Formats.Archives.Recon;
+using Dunia.Formats.Textures;
 
 namespace Dunia.Cli;
 
@@ -15,14 +16,17 @@ internal static class Program
           list      List archive entries
           entry     Inspect an archive entry
           get       Extract an archive entry
-          tex       Convert or replace a texture
+          tex       Texture operations
           pack      Pack changed resources
           rebuild   Rebuild an archive pair
           refs      Resolve resource references
           hash      Compute or resolve Dunia hashes
+
+        Texture operations:
+          dunia tex extract <input.xbt> <output.dds>
         """;
 
-    public static int Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
         {
@@ -33,6 +37,11 @@ internal static class Program
         if (args is ["probe", var fatPath])
         {
             return Probe(fatPath);
+        }
+
+        if (args is ["tex", "extract", var xbtPath, var ddsPath])
+        {
+            return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -58,6 +67,66 @@ internal static class Program
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
+        }
+    }
+
+    private static async Task<int> ExtractDdsAsync(string xbtPath, string ddsPath)
+    {
+        string? temporaryPath = null;
+
+        try
+        {
+            string fullXbtPath = Path.GetFullPath(xbtPath);
+            string fullDdsPath = Path.GetFullPath(ddsPath);
+
+            StringComparison pathComparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(fullXbtPath, fullDdsPath, pathComparison))
+            {
+                throw new ArgumentException("Input and output paths must be different.");
+            }
+
+            if (File.Exists(fullDdsPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            temporaryPath = $"{fullDdsPath}.{Guid.NewGuid():N}.tmp";
+            await using FileStream input = File.OpenRead(fullXbtPath);
+            XbtDdsExtractionResult result;
+
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                result = await XbtDdsExtractor.ExtractAsync(input, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullDdsPath, false);
+
+            Console.WriteLine($"output={fullDdsPath}");
+            Console.WriteLine($"header.length={result.HeaderLength}");
+            Console.WriteLine($"dds.length={result.DdsLength}");
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
         }
     }
 }

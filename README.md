@@ -67,11 +67,16 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | .NET 9 solution and project boundaries | Implemented |
 | FAT prefix recon probe | Implemented |
 | Atomic `.original` backup primitive | Implemented |
+| Complete FAT/DAT pair backup preflight | Implemented |
+| Pending-change set with Apply/Discard foundations | Implemented |
+| SHA-256 verified replacement staging | Implemented |
 | FAT v10 entry parser | Blocked on fixture-backed recon |
 | FAT/DAT extraction and rebuilding | Not implemented |
 | FCB parser and writer | Not implemented |
-| XBT/DDS conversion | Not implemented |
-| Production CLI commands | Not implemented |
+| XBT → DDS extraction | Implemented |
+| DDS/PNG → XBT import and re-encode | Not implemented |
+| CLI `probe` and `tex extract` commands | Implemented |
+| Remaining production CLI commands | Not implemented |
 | WPF archive browser | Not implemented |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
@@ -102,6 +107,15 @@ dotnet test DuniaToolkit.slnx --configuration Release
 
 Warnings are treated as errors.
 
+## Implemented library surface
+
+- `ArchiveBackupService` atomically creates one permanent `.original` backup.
+- `ArchivePairBackupService` validates and backs up a complete FAT/DAT pair.
+- `PendingChangeSet<TKey, TChange>` provides ordered, thread-safe staging and discard snapshots.
+- `ReplacementStagingStore` snapshots replacement files and verifies their length and SHA-256 before use.
+- `FatPrefixProbe` reports raw archive prefix evidence without assuming an unverified FAT v10 layout.
+- `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
+
 ## Recon probe
 
 The only working CLI operation currently reads a small prefix from a `.fat` file. It reports raw bytes and both possible byte orders without claiming that the remaining FAT v10 layout is understood.
@@ -121,7 +135,13 @@ version.be=...
 prefix.hex=...
 ```
 
-Planned CLI verbs are `list`, `entry`, `get`, `tex`, `pack`, `rebuild`, `refs`, and `hash`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+Extract a DDS payload without overwriting an existing output file:
+
+```powershell
+dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
+```
+
+Planned CLI verbs are `list`, `entry`, `get`, `pack`, `rebuild`, `refs`, and `hash`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
 
 ## Correctness requirements
 
@@ -148,4 +168,3 @@ The repository does not currently contain a project license. Add one before dist
 ## Disclaimer
 
 This is an unofficial community project and is not affiliated with or endorsed by Ubisoft. Keep verified backups of original game files and use modifications at your own risk.
-
