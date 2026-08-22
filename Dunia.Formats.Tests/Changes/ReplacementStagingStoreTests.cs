@@ -33,6 +33,23 @@ public sealed class ReplacementStagingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task StageAsyncSnapshotsReadableStream()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] original = [0x10, 0x20, 0x30];
+        using var source = new MemoryStream(original, false);
+        using var store = new ReplacementStagingStore(directory);
+
+        StagedReplacement replacement = await store.StageAsync(source, "mutated.fcb", token);
+        using var output = new MemoryStream();
+        await store.CopyVerifiedToAsync(replacement, output, token);
+
+        Assert.Equal("mutated.fcb", replacement.OriginalFileName);
+        Assert.Equal(original.Length, replacement.Length);
+        Assert.Equal(original, output.ToArray());
+    }
+
+    [Fact]
     public async Task RemoveMakesReplacementUnavailable()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -79,4 +96,3 @@ public sealed class ReplacementStagingStoreTests : IDisposable
 
     public void Dispose() => Directory.Delete(directory, true);
 }
-

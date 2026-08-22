@@ -1,0 +1,92 @@
+using System.Buffers.Binary;
+using Dunia.Formats.Archives;
+using Dunia.Formats.Archives.FatV10;
+using Dunia.Formats.Fcb;
+
+namespace Dunia.Formats.Tests.Fcb;
+
+public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
+{
+    private readonly string directory = Path.Combine(
+        Path.GetTempPath(),
+        "DuniaToolkit.Tests",
+        Guid.NewGuid().ToString("N"));
+
+    public FcbArchiveMutationDryRunServiceTests() => Directory.CreateDirectory(directory);
+
+    [Fact]
+    public async Task RunAsyncMutatesRebuildsVerifiesAndRemovesOutputs()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair source = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(source.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationDryRunResult result = await FcbArchiveMutationDryRunService.RunAsync(
+            source,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "false",
+            directory,
+            token);
+
+        Assert.True(result.IsVerified);
+        Assert.Equal(FcbValueKind.Boolean, result.Codec);
+        Assert.Equal(2, result.ArchiveEntryCount);
+        Assert.Equal(fcb.Length, result.PayloadLength);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(source.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(source.DatPath, token));
+        Assert.Empty(Directory.EnumerateDirectories(directory, "fcb-dryrun-*"));
+    }
+
+    public void Dispose() => Directory.Delete(directory, true);
+
+    private ArchivePair CreateArchive(int fcbLength, byte[] data)
+    {
+        string fatPath = Path.Combine(directory, "source.fat");
+        string datPath = Path.Combine(directory, "source.dat");
+        FatV10Entry[] entries =
+        [
+            new(0x0123456789ABCDEF, fcbLength, 0, fcbLength, FatV10CompressionScheme.None, false),
+            new(0x1111111111111111, 2, fcbLength, 2, FatV10CompressionScheme.None, false),
+        ];
+        using (FileStream fat = File.Create(fatPath))
+        {
+            FatV10IndexWriter.Write(fat, entries);
+        }
+
+        File.WriteAllBytes(datPath, data);
+        return new(fatPath, datPath);
+    }
+
+    private static byte[] CreateBooleanFcb(bool value)
+    {
+        using var body = new MemoryStream();
+        body.WriteByte(0);
+        WriteUInt32(body, 0x10);
+        body.WriteByte(1);
+        WriteUInt32(body, 0x20);
+        body.WriteByte(1);
+        body.WriteByte(value ? (byte)1 : (byte)0);
+        byte[] data = new byte[FcbReader.HeaderSize + body.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, FcbReader.Signature);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(4), FcbReader.Version);
+        body.ToArray().CopyTo(data, FcbReader.HeaderSize);
+        return data;
+    }
+
+    private static void WriteUInt32(Stream output, uint value)
+    {
+        Span<byte> data = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, value);
+        output.Write(data);
+    }
+}

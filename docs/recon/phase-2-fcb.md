@@ -116,6 +116,12 @@ Referenced fields cannot be replaced independently.
 
 Real entry 93 was copied and `E7046466:723A4D89` (`SpawnThreadSafe`) was changed to `true`. The output retained complete 6/6 schema coverage and passed byte-exact read/write verification with SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`. A repeated command targeting the same output was rejected without overwrite.
 
+## FAT/DAT mutation dry-run — 2026-08-22
+
+`fcb archive-mutate-dry-run` extracts the selected payload in memory, verifies the expected 64-bit resource hash and exact FCB field identity, performs the schema-gated mutation, stages the result from memory, rebuilds a temporary archive pair, and deletes the pair after validation.
+
+Real `common.fat` entry 93 passed with `payload.exact=true`, `entries.untouched=true`, `dat.prefix.exact=true`, and `source.modified=false`. The rebuilt payload SHA-256 was `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`.
+
 ## Next gate
 
-Integrate the verified FCB output with FAT/DAT rebuilding through an explicit dry-run workflow. Keep live archive mutation behind copied-archive validation and expected resource-hash confirmation.
+Add a separately named confirmed-apply command restricted to a copied archive pair. Require expected resource hash, pre-write backups, successful dry-run, post-apply extraction equality, and rollback on any failure. Do not expose direct mutation of the installed game archive yet.

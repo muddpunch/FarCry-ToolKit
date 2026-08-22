@@ -83,6 +83,69 @@ public sealed class ReplacementStagingStore : IDisposable
         }
     }
 
+    public async Task<StagedReplacement> StageAsync(
+        Stream source,
+        string originalFileName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrWhiteSpace(originalFileName);
+        if (!source.CanRead)
+        {
+            throw new ArgumentException("Replacement source stream must be readable.", nameof(source));
+        }
+
+        if (!string.Equals(Path.GetFileName(originalFileName), originalFileName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Original file name must not contain a path.", nameof(originalFileName));
+        }
+
+        BeginOperation();
+        string? temporaryPath = null;
+        string? stagedPath = null;
+        byte[]? buffer = null;
+        try
+        {
+            Guid id = Guid.NewGuid();
+            temporaryPath = Path.Combine(SessionPath, $"{id:N}.tmp");
+            stagedPath = Path.Combine(SessionPath, $"{id:N}.bin");
+            buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                lifetimeCancellation.Token);
+            CancellationToken token = linkedCancellation.Token;
+            (long length, string sha256) = await CopyAndHashAsync(
+                source,
+                temporaryPath,
+                buffer,
+                token).ConfigureAwait(false);
+
+            token.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, stagedPath, false);
+            lock (syncRoot)
+            {
+                files.Add(id, stagedPath);
+            }
+
+            return new(id, originalFileName, length, sha256);
+        }
+        catch
+        {
+            TryDelete(temporaryPath);
+            TryDelete(stagedPath);
+            throw;
+        }
+        finally
+        {
+            if (buffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(buffer, true);
+            }
+
+            EndOperation();
+        }
+    }
+
     public async Task CopyVerifiedToAsync(
         StagedReplacement replacement,
         Stream destination,
@@ -232,6 +295,41 @@ public sealed class ReplacementStagingStore : IDisposable
             FileShare.Read,
             BufferSize,
             options);
+        await using FileStream destination = new(
+            destinationPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            BufferSize,
+            options);
+
+        while (true)
+        {
+            int read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            hash.AppendData(buffer.AsSpan(0, read));
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            length = checked(length + read);
+        }
+
+        await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
+        destination.Flush(true);
+        return (length, Convert.ToHexString(hash.GetHashAndReset()));
+    }
+
+    private static async Task<(long Length, string Sha256)> CopyAndHashAsync(
+        Stream source,
+        string destinationPath,
+        byte[] buffer,
+        CancellationToken cancellationToken)
+    {
+        const FileOptions options = FileOptions.Asynchronous | FileOptions.SequentialScan;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        long length = 0;
         await using FileStream destination = new(
             destinationPath,
             FileMode.CreateNew,

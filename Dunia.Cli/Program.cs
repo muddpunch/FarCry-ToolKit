@@ -48,6 +48,7 @@ internal static class Program
           dunia fcb archive-audit <archive.fat> <names.txt>
           dunia fcb archive-discover <archive.fat> <candidate-binary>
           dunia fcb archive-discover <archive.fat> <candidate-binary> --output <names.txt>
+          dunia fcb archive-mutate-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -217,6 +218,29 @@ internal static class Program
         {
             return await DiscoverFcbArchiveNamesAsync(outputArchivePath, outputCandidatePath, discoveredNamesPath)
                 .ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-dry-run", var mutationArchivePath, var rawMutationEntryIndex,
+                var rawResourceHash, var archiveMutationSchemaPath, var rawArchiveNodeIndex,
+                var rawArchiveFieldIndex, var rawArchiveTypeHash, var rawArchiveFieldHash, var archiveMutationValue]
+            && TryParseEntryIndex(rawMutationEntryIndex, out int mutationEntryIndex)
+            && TryParseResourceHash(rawResourceHash, out ulong expectedResourceHash)
+            && TryParseEntryIndex(rawArchiveNodeIndex, out int archiveNodeIndex)
+            && TryParseEntryIndex(rawArchiveFieldIndex, out int archiveFieldIndex)
+            && TryParseFcbHash(rawArchiveTypeHash, out uint expectedArchiveTypeHash)
+            && TryParseFcbHash(rawArchiveFieldHash, out uint expectedArchiveFieldHash))
+        {
+            return await DryRunFcbArchiveMutationAsync(
+                mutationArchivePath,
+                mutationEntryIndex,
+                expectedResourceHash,
+                archiveMutationSchemaPath,
+                archiveNodeIndex,
+                archiveFieldIndex,
+                expectedArchiveTypeHash,
+                expectedArchiveFieldHash,
+                archiveMutationValue).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -847,6 +871,50 @@ internal static class Program
         return await FcbArchiveAnalyzer.AnalyzeAsync(data, index).ConfigureAwait(false);
     }
 
+    private static async Task<int> DryRunFcbArchiveMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        int nodeIndex,
+        int fieldIndex,
+        uint expectedTypeHash,
+        uint expectedFieldHash,
+        string value)
+    {
+        try
+        {
+            FcbArchiveMutationDryRunResult result = await FcbArchiveMutationDryRunService.RunAsync(
+                ArchivePair.FromIndex(archivePath),
+                entryIndex,
+                expectedResourceHash,
+                LoadFcbValueSchema(schemaPath),
+                nodeIndex,
+                fieldIndex,
+                expectedTypeHash,
+                expectedFieldHash,
+                value,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("dry-run=true");
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine($"codec={result.Codec}");
+            Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
+            Console.WriteLine($"payload.sha256={result.PayloadSha256}");
+            Console.WriteLine($"payload.exact={result.PayloadExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"entries.untouched={result.UntouchedEntriesExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"dat.prefix.exact={result.SourceDataPrefixExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
+            return result.IsVerified ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static void WriteFcbArchiveSummary(FcbArchiveAnalysisResult analysis)
     {
         Console.WriteLine(FormattableString.Invariant($"resources={analysis.Resources.Count}"));
@@ -1273,6 +1341,19 @@ internal static class Program
 
         return span.Length == 8
             && uint.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
+    }
+
+    private static bool TryParseResourceHash(string value, out ulong hash)
+    {
+        hash = 0;
+        ReadOnlySpan<char> span = value.AsSpan();
+        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            span = span[2..];
+        }
+
+        return span.Length == 16
+            && ulong.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
     }
 
     private static bool TryParseEntryIndex(string value, out int index) =>
