@@ -55,22 +55,44 @@ public sealed class FatV10PayloadExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsyncRejectsCompressedPayload()
+    public async Task ExtractAsyncDecodesRawLz4Block()
     {
-        await using MemoryStream data = new([10, 20, 30]);
+        await using MemoryStream data = new([0x50, (byte)'h', (byte)'e', (byte)'l', (byte)'l', (byte)'o']);
         await using MemoryStream destination = new();
         FatV10Entry entry = CreateEntry(
             offset: 0,
-            storedSize: 2,
-            uncompressedSize: 3,
+            storedSize: 6,
+            uncompressedSize: 5,
             compressionScheme: FatV10CompressionScheme.Lz4);
 
-        await Assert.ThrowsAsync<NotSupportedException>(
+        await FatV10PayloadExtractor.ExtractAsync(
+            data,
+            entry,
+            destination,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("hello"u8.ToArray(), destination.ToArray());
+    }
+
+    [Fact]
+    public async Task ExtractAsyncRejectsInvalidLz4BlockBeforeWriting()
+    {
+        await using MemoryStream data = new([0x10]);
+        await using MemoryStream destination = new();
+        FatV10Entry entry = CreateEntry(
+            offset: 0,
+            storedSize: 1,
+            uncompressedSize: 5,
+            compressionScheme: FatV10CompressionScheme.Lz4);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
             () => FatV10PayloadExtractor.ExtractAsync(
                 data,
                 entry,
                 destination,
                 TestContext.Current.CancellationToken));
+
+        Assert.Empty(destination.ToArray());
     }
 
     [Fact]

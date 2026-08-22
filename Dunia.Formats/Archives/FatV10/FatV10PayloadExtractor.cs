@@ -1,3 +1,5 @@
+using K4os.Compression.LZ4;
+
 namespace Dunia.Formats.Archives.FatV10;
 
 public static class FatV10PayloadExtractor
@@ -27,17 +29,13 @@ public static class FatV10PayloadExtractor
             throw new NotSupportedException("Encrypted FAT v10 payloads are not supported.");
         }
 
-        if (entry.CompressionScheme != FatV10CompressionScheme.None)
-        {
-            throw new NotSupportedException($"Compression scheme '{entry.CompressionScheme}' is not supported yet.");
-        }
-
         if (entry.Offset < 0 || entry.StoredSize < 0 || entry.UncompressedSize < 0)
         {
             throw new InvalidDataException("FAT v10 entry contains a negative payload range.");
         }
 
-        if (entry.StoredSize != entry.UncompressedSize)
+        if (entry.CompressionScheme == FatV10CompressionScheme.None
+            && entry.StoredSize != entry.UncompressedSize)
         {
             throw new InvalidDataException("Uncompressed FAT v10 entry has mismatched stored and output sizes.");
         }
@@ -51,11 +49,70 @@ public static class FatV10PayloadExtractor
         try
         {
             data.Position = entry.Offset;
-            await CopyExactlyAsync(data, destination, entry.StoredSize, cancellationToken).ConfigureAwait(false);
+            switch (entry.CompressionScheme)
+            {
+                case FatV10CompressionScheme.None:
+                    await CopyExactlyAsync(data, destination, entry.StoredSize, cancellationToken).ConfigureAwait(false);
+                    break;
+                case FatV10CompressionScheme.Lz4:
+                    await ExtractLz4Async(data, destination, entry, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported compression scheme: {entry.CompressionScheme}.");
+            }
         }
         finally
         {
             data.Position = originalPosition;
+        }
+    }
+
+    private static async Task ExtractLz4Async(
+        Stream source,
+        Stream destination,
+        FatV10Entry entry,
+        CancellationToken cancellationToken)
+    {
+        if (entry.StoredSize == 0 || entry.UncompressedSize == 0)
+        {
+            if (entry.StoredSize == entry.UncompressedSize)
+            {
+                return;
+            }
+
+            throw new InvalidDataException("LZ4 FAT v10 entry has an invalid zero-sized payload.");
+        }
+
+        byte[] compressed = GC.AllocateUninitializedArray<byte>(entry.StoredSize);
+        await ReadExactlyAsync(source, compressed, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        byte[] uncompressed = GC.AllocateUninitializedArray<byte>(entry.UncompressedSize);
+        int decoded = LZ4Codec.Decode(compressed, uncompressed);
+        if (decoded != uncompressed.Length)
+        {
+            throw new InvalidDataException(
+                $"LZ4 payload decoded to {decoded} bytes; expected {uncompressed.Length}.");
+        }
+
+        await destination.WriteAsync(uncompressed, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ReadExactlyAsync(
+        Stream source,
+        Memory<byte> destination,
+        CancellationToken cancellationToken)
+    {
+        int position = 0;
+        while (position < destination.Length)
+        {
+            int read = await source.ReadAsync(destination[position..], cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                throw new EndOfStreamException("DAT stream ended before the complete payload was read.");
+            }
+
+            position += read;
         }
     }
 

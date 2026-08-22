@@ -74,12 +74,12 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | SHA-256 verified replacement staging | Implemented |
 | FAT v10 entry parser | Implemented and validated against all 16 local FC5 indexes |
 | Uncompressed DAT payload extraction | Implemented |
-| LZ4 DAT payload extraction | Not implemented |
+| LZ4 DAT payload extraction | Implemented |
 | FAT/DAT extraction and rebuilding | Not implemented |
 | FCB parser and writer | Not implemented |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
-| CLI `probe`, `list`, and `tex extract` commands | Implemented |
+| CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
 | Remaining production CLI commands | Not implemented |
 | WPF archive browser | Not implemented |
 
@@ -120,7 +120,7 @@ Warnings are treated as errors.
 - `FatPrefixProbe` reports raw archive prefix evidence without assuming an unverified FAT v10 layout.
 - `FatV10IndexSummaryReader` validates the confirmed 24-byte header, 20-byte entry envelope, and 8-byte trailer.
 - `FatV10IndexReader` decodes hashes, sizes, offsets, encryption flags, and LZ4/none metadata with paired-DAT bounds checks.
-- `FatV10PayloadExtractor` streams validated, uncompressed entry payloads from DAT without loading the complete archive into memory.
+- `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
 ## Archive inspection
@@ -135,6 +135,12 @@ List decoded entries. The default limit is 100; every entry is still parsed and 
 
 ```powershell
 dotnet run --project Dunia.Cli -- list "D:\Games\Far Cry 5\data_final\pc\common.fat" --limit 25
+```
+
+Extract one entry by its zero-based index. Existing output files are never overwritten:
+
+```powershell
+dotnet run --project Dunia.Cli -- get "D:\Games\Far Cry 5\data_final\pc\common.fat" 0 "entry-0.bin"
 ```
 
 Example output shape:
@@ -154,7 +160,7 @@ Extract a DDS payload without overwriting an existing output file:
 dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
 ```
 
-Planned CLI verbs are `entry`, `get`, `pack`, `rebuild`, `refs`, and `hash`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+Planned CLI verbs are `entry`, `pack`, `rebuild`, `refs`, and `hash`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
 
 ## Correctness requirements
 

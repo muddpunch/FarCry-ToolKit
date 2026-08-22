@@ -44,6 +44,8 @@ Full metadata decoding of `common.fat` produced 3,198 LZ4 entries, 203 uncompres
 
 The implemented `FatV10IndexReader` subsequently parsed every entry in all 16 local indexes and validated every payload range against its adjacent `.dat`; all 16 passed.
 
+FC5 compressed payloads are raw LZ4 blocks without an additional container header. Decoding requires the compressed and expected output sizes stored in the FAT entry; the decoder rejects any output-size mismatch.
+
 No game-derived bytes are stored in this repository.
 
 ## Sources

@@ -31,6 +31,7 @@ internal static class Program
         Archive operations:
           dunia probe <archive.fat>
           dunia list <archive.fat> [--limit N]
+          dunia get <archive.fat> <entry-index> <output-file>
         """;
 
     public static async Task<int> Main(string[] args)
@@ -58,6 +59,13 @@ internal static class Program
             return ListEntries(limitedFatPath, limit);
         }
 
+        if (args is ["get", var getFatPath, var rawIndex, var outputPath]
+            && int.TryParse(rawIndex, NumberStyles.None, CultureInfo.InvariantCulture, out int entryIndex)
+            && entryIndex >= 0)
+        {
+            return await ExtractEntryAsync(getFatPath, entryIndex, outputPath).ConfigureAwait(false);
+        }
+
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
@@ -65,6 +73,69 @@ internal static class Program
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
         return 2;
+    }
+
+    private static async Task<int> ExtractEntryAsync(string fatPath, int entryIndex, string outputPath)
+    {
+        string? temporaryPath = null;
+
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            long datLength = new FileInfo(pair.DatPath).Length;
+
+            using FileStream fat = File.OpenRead(pair.FatPath);
+            FatV10Index index = FatV10IndexReader.Read(fat, datLength);
+            if ((uint)entryIndex >= (uint)index.Entries.Count)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(entryIndex),
+                    entryIndex,
+                    $"Entry index must be between 0 and {index.Entries.Count - 1}.");
+            }
+
+            string fullOutputPath = Path.GetFullPath(outputPath);
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            temporaryPath = $"{fullOutputPath}.{Guid.NewGuid():N}.tmp";
+            await using FileStream data = File.OpenRead(pair.DatPath);
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                FatV10Entry entry = index.Entries[entryIndex];
+                await FatV10PayloadExtractor.ExtractAsync(data, entry, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            FatV10Entry extracted = index.Entries[entryIndex];
+            Console.WriteLine($"output={fullOutputPath}");
+            Console.WriteLine(FormattableString.Invariant($"index={entryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"hash={extracted.NameHash:X16}"));
+            Console.WriteLine(FormattableString.Invariant($"length={extracted.UncompressedSize}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     private static int ListEntries(string fatPath, int limit)
