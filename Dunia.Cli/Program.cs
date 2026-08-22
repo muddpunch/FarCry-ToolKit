@@ -32,11 +32,13 @@ internal static class Program
         Archive operations:
           dunia probe <archive.fat>
           dunia list <archive.fat> [--limit N] [--names paths.txt]
+          dunia entry <archive.fat> <entry-index> [--names paths.txt]
           dunia get <archive.fat> <entry-index> <output-file>
 
         Hash operations:
           dunia hash compute <resource-path>
           dunia hash resolve <16-digit-hash> <paths.txt>
+          dunia hash audit <archive.fat> <paths.txt>
         """;
 
     public static async Task<int> Main(string[] args)
@@ -90,6 +92,18 @@ internal static class Program
             return await ExtractEntryAsync(getFatPath, entryIndex, outputPath).ConfigureAwait(false);
         }
 
+        if (args is ["entry", var entryFatPath, var rawEntryIndex]
+            && TryParseEntryIndex(rawEntryIndex, out int inspectedIndex))
+        {
+            return InspectEntry(entryFatPath, inspectedIndex, null);
+        }
+
+        if (args is ["entry", var namedEntryFatPath, var rawNamedEntryIndex, "--names", var entryNamesPath]
+            && TryParseEntryIndex(rawNamedEntryIndex, out int namedInspectedIndex))
+        {
+            return InspectEntry(namedEntryFatPath, namedInspectedIndex, entryNamesPath);
+        }
+
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
@@ -107,6 +121,11 @@ internal static class Program
             && TryParseHash(rawHash, out ulong hash))
         {
             return ResolveHash(hash, hashNamesPath);
+        }
+
+        if (args is ["hash", "audit", var auditFatPath, var auditNamesPath])
+        {
+            return AuditNames(auditFatPath, auditNamesPath);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -199,12 +218,7 @@ internal static class Program
                     _ => throw new InvalidDataException($"Unsupported compression scheme: {entry.CompressionScheme}.")
                 };
                 IReadOnlyList<string> names = resolver?.Resolve(entry.NameHash) ?? [];
-                string name = names.Count switch
-                {
-                    0 => "<unknown>",
-                    1 => names[0],
-                    _ => $"<collision:{string.Join('|', names)}>",
-                };
+                string name = RenderName(names);
 
                 Console.WriteLine(FormattableString.Invariant(
                     $"{i}\t{entry.NameHash:X16}\t{name}\t{entry.Offset}\t{entry.StoredSize}\t{entry.UncompressedSize}\t{compression}\t{entry.IsEncrypted.ToString().ToLowerInvariant()}"));
@@ -242,6 +256,77 @@ internal static class Program
         }
     }
 
+    private static int InspectEntry(string fatPath, int entryIndex, string? namesPath)
+    {
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            using FileStream input = File.OpenRead(pair.FatPath);
+            FatV10Index index = FatV10IndexReader.Read(input, new FileInfo(pair.DatPath).Length);
+            if ((uint)entryIndex >= (uint)index.Entries.Count)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(entryIndex),
+                    entryIndex,
+                    $"Entry index must be between 0 and {index.Entries.Count - 1}.");
+            }
+
+            FatV10Entry entry = index.Entries[entryIndex];
+            DuniaNameResolver? resolver = namesPath is null ? null : LoadResolver(namesPath);
+            Console.WriteLine(FormattableString.Invariant($"index={entryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"hash={entry.NameHash:X16}"));
+            Console.WriteLine($"name={RenderName(resolver?.Resolve(entry.NameHash) ?? [])}");
+            Console.WriteLine(FormattableString.Invariant($"offset={entry.Offset}"));
+            Console.WriteLine(FormattableString.Invariant($"stored={entry.StoredSize}"));
+            Console.WriteLine(FormattableString.Invariant($"uncompressed={entry.UncompressedSize}"));
+            Console.WriteLine($"compression={entry.CompressionScheme.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"encrypted={entry.IsEncrypted.ToString().ToLowerInvariant()}");
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int AuditNames(string fatPath, string namesPath)
+    {
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            using FileStream input = File.OpenRead(pair.FatPath);
+            FatV10Index index = FatV10IndexReader.Read(input, new FileInfo(pair.DatPath).Length);
+            DuniaNameCoverageReport report = DuniaNameCoverageAnalyzer.Analyze(
+                index.Entries.Select(entry => entry.NameHash),
+                LoadResolver(namesPath));
+
+            Console.WriteLine(FormattableString.Invariant($"entries={report.EntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"resolved={report.ResolvedEntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"unknown.entries={report.UnknownEntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"unknown.hashes={report.UnknownHashes.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"collision.entries={report.CollisionEntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"collision.hashes={report.CollisionHashes.Count}"));
+            Console.WriteLine($"complete={report.IsComplete.ToString().ToLowerInvariant()}");
+            foreach (ulong hash in report.UnknownHashes)
+            {
+                Console.WriteLine(FormattableString.Invariant($"unknown={hash:X16}"));
+            }
+
+            foreach (ulong hash in report.CollisionHashes)
+            {
+                Console.WriteLine(FormattableString.Invariant($"collision={hash:X16}"));
+            }
+
+            return report.IsComplete ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static DuniaNameResolver LoadResolver(string namesPath)
     {
         using StreamReader input = File.OpenText(namesPath);
@@ -260,6 +345,16 @@ internal static class Program
         return span.Length is > 0 and <= 16
             && ulong.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
     }
+
+    private static bool TryParseEntryIndex(string value, out int index) =>
+        int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out index) && index >= 0;
+
+    private static string RenderName(IReadOnlyList<string> names) => names.Count switch
+    {
+        0 => "<unknown>",
+        1 => names[0],
+        _ => $"<collision:{string.Join('|', names)}>",
+    };
 
     private static int Probe(string fatPath)
     {

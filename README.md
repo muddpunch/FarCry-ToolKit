@@ -171,10 +171,13 @@ Compute a normalized FC5 resource-path CRC64 or resolve one from a local one-pat
 ```powershell
 dotnet run --project Dunia.Cli -- hash compute "graphics\example.xbt"
 dotnet run --project Dunia.Cli -- hash resolve 0123456789ABCDEF "paths.txt"
+dotnet run --project Dunia.Cli -- hash audit "common.fat" "paths.txt"
 dotnet run --project Dunia.Cli -- list "common.fat" --names "paths.txt"
+dotnet run --project Dunia.Cli -- entry "common.fat" 0 --names "paths.txt"
 ```
 
 Blank lines and lines beginning with `#` or `;` are ignored. Multiple candidates for the same CRC64 are reported as collisions; unresolved entries remain explicit as `<unknown>`.
+`hash audit` exits with code `3` until the supplied catalog resolves every archive entry uniquely.
 
 ## Correctness requirements
 
