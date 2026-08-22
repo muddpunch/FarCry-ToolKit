@@ -2,7 +2,7 @@
 
 ## Gibbed.Dunia
 
-The FAT v10 entry layout, Dunia CRC64 algorithm, and FCB v2 tree layout are adapted from `EntrySerializerV10.cs`, `CRC64.cs`, and `BinaryResourceFile.cs` in [gibbed/Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia).
+The FAT v10 entry layout, Dunia CRC32/CRC64 algorithms, and FCB v2 tree layout are adapted from `EntrySerializerV10.cs`, `CRC32.cs`, `CRC64.cs`, and `BinaryResourceFile.cs` in [gibbed/Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia).
 
 ```text
 zLib License

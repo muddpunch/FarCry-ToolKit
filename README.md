@@ -90,6 +90,7 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | FCB v2 parser | Implemented and validated on a real FC5 fixture |
 | FCB archive signature scanner | Implemented |
 | FCB v2 writer and byte-exact verifier | Implemented; validated on uncompressed and LZ4-backed real FC5 fixtures |
+| FCB CRC32 hashing, name resolution, coverage audit, and binary discovery | Implemented; unresolved hashes remain explicit |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -138,10 +139,12 @@ Warnings are treated as errors.
 - `FatV10ArchivePatchFileBuilder` durably writes, reparses, and publishes a new archive pair without modifying the source pair or overwriting existing outputs.
 - `FatV10ArchivePatchApplyService` builds first, creates permanent backups, publishes both files with rollback, and validates the live pair before deleting rollback files.
 - `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
+- `DuniaCrc32` and `FcbNameResolver` resolve case-sensitive FCB type/field hashes from text lists or Dunia `binary_classes.xml` definitions.
 - `FcbReader` parses FCB v2 headers, raw hash-keyed fields, backward value references, and shared child pointers.
 - `FcbWriter` preserves field order, header counters, backward value references, and shared child pointers.
 - `FcbRoundTripVerifier` requires read/write SHA-256 equality before an FCB resource is accepted for editing.
 - `FcbArchiveScanner` locates FCB payloads inside FAT/DAT pairs without requiring resolved filenames.
+- `FcbNameDiscovery` scans printable binary identifiers only against hashes present in a selected FCB and retains source offsets as evidence.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 

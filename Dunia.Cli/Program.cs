@@ -36,6 +36,10 @@ internal static class Program
           dunia fcb probe <input.fcb>
           dunia fcb verify <input.fcb>
           dunia fcb scan <archive.fat> [--limit N]
+          dunia fcb hash <case-sensitive-name>
+          dunia fcb dump <input.fcb> [--names names.txt]
+          dunia fcb audit <input.fcb> <names.txt>
+          dunia fcb discover <input.fcb> <candidate-binary>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -142,6 +146,33 @@ internal static class Program
             && scanLimit > 0)
         {
             return await ScanFcbAsync(limitedScanFatPath, scanLimit).ConfigureAwait(false);
+        }
+
+        if (args is ["fcb", "hash", var fcbName])
+        {
+            Console.WriteLine(FormattableString.Invariant($"hash={DuniaCrc32.Compute(fcbName):X8}"));
+            Console.WriteLine($"name={fcbName}");
+            return 0;
+        }
+
+        if (args is ["fcb", "dump", var dumpedFcbPath])
+        {
+            return DumpFcb(dumpedFcbPath, null);
+        }
+
+        if (args is ["fcb", "dump", var namedFcbPath, "--names", var fcbNamesPath])
+        {
+            return DumpFcb(namedFcbPath, fcbNamesPath);
+        }
+
+        if (args is ["fcb", "audit", var auditedFcbPath, var auditedNamesPath])
+        {
+            return AuditFcbNames(auditedFcbPath, auditedNamesPath);
+        }
+
+        if (args is ["fcb", "discover", var discoveryFcbPath, var candidateBinaryPath])
+        {
+            return DiscoverFcbNames(discoveryFcbPath, candidateBinaryPath);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -319,6 +350,131 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"scanned={result.ScannedEntryCount}"));
             Console.WriteLine(FormattableString.Invariant($"skipped={result.SkippedEntryCount}"));
             return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int DumpFcb(string path, string? namesPath)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(path);
+            FcbDocument document = FcbReader.Read(input);
+            FcbNameResolver? resolver = namesPath is null ? null : LoadFcbResolver(namesPath);
+            IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
+            var ids = new Dictionary<FcbNode, int>(ReferenceEqualityComparer.Instance);
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                ids.Add(nodes[i], i);
+            }
+
+            for (int nodeIndex = 0; nodeIndex < nodes.Count; nodeIndex++)
+            {
+                FcbNode node = nodes[nodeIndex];
+                Console.WriteLine(FormattableString.Invariant(
+                    $"node={nodeIndex}\ttype.hash={node.TypeHash:X8}\ttype.name={RenderFcbName(node.TypeHash, resolver)}"));
+                for (int fieldIndex = 0; fieldIndex < node.Fields.Count; fieldIndex++)
+                {
+                    FcbField field = node.Fields[fieldIndex];
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"field={nodeIndex}.{fieldIndex}\thash={field.NameHash:X8}\tname={RenderFcbName(field.NameHash, resolver)}\tbytes={field.Data.Length}\treference={field.IsReference.ToString().ToLowerInvariant()}"));
+                }
+
+                for (int childIndex = 0; childIndex < node.Children.Count; childIndex++)
+                {
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"child={nodeIndex}.{childIndex}\tnode={ids[node.Children[childIndex]]}"));
+                }
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"nodes={nodes.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"fields={nodes.Sum(node => node.Fields.Count)}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int AuditFcbNames(string path, string namesPath)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(path);
+            FcbDocument document = FcbReader.Read(input);
+            FcbNameResolver resolver = LoadFcbResolver(namesPath);
+            IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
+            FcbNameCoverageReport types = FcbNameCoverageAnalyzer.Analyze(
+                nodes.Select(node => node.TypeHash),
+                resolver);
+            FcbNameCoverageReport fields = FcbNameCoverageAnalyzer.Analyze(
+                nodes.SelectMany(node => node.Fields).Select(field => field.NameHash),
+                resolver);
+
+            WriteFcbCoverage("types", types);
+            WriteFcbCoverage("fields", fields);
+            bool complete = types.IsComplete && fields.IsComplete;
+            Console.WriteLine($"complete={complete.ToString().ToLowerInvariant()}");
+            return complete ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static void WriteFcbCoverage(string prefix, FcbNameCoverageReport report)
+    {
+        Console.WriteLine(FormattableString.Invariant($"{prefix}.occurrences={report.OccurrenceCount}"));
+        Console.WriteLine(FormattableString.Invariant($"{prefix}.resolved={report.ResolvedCount}"));
+        Console.WriteLine(FormattableString.Invariant($"{prefix}.unknown={report.UnknownCount}"));
+        Console.WriteLine(FormattableString.Invariant($"{prefix}.collisions={report.CollisionCount}"));
+        foreach (uint hash in report.UnknownHashes)
+        {
+            Console.WriteLine(FormattableString.Invariant($"{prefix}.unknown.hash={hash:X8}"));
+        }
+
+        foreach (uint hash in report.CollisionHashes)
+        {
+            Console.WriteLine(FormattableString.Invariant($"{prefix}.collision.hash={hash:X8}"));
+        }
+    }
+
+    private static int DiscoverFcbNames(string fcbPath, string candidatePath)
+    {
+        try
+        {
+            using FileStream fcb = File.OpenRead(fcbPath);
+            FcbDocument document = FcbReader.Read(fcb);
+            IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
+            IEnumerable<uint> hashes = nodes.Select(node => node.TypeHash)
+                .Concat(nodes.SelectMany(node => node.Fields).Select(field => field.NameHash));
+            using FileStream candidates = File.OpenRead(candidatePath);
+            FcbNameDiscoveryResult result = FcbNameDiscovery.ScanAscii(candidates, hashes);
+
+            foreach (FcbNameDiscoveryMatch match in result.Matches.OrderBy(match => match.Hash).ThenBy(match => match.Name))
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"match={match.Hash:X8}\tname={match.Name}\toffset={match.SourceOffset}"));
+            }
+
+            foreach (uint hash in result.UnknownHashes)
+            {
+                Console.WriteLine(FormattableString.Invariant($"unknown={hash:X8}"));
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"targets={result.TargetHashCount}"));
+            Console.WriteLine(FormattableString.Invariant($"candidates={result.CandidateCount}"));
+            Console.WriteLine(FormattableString.Invariant($"matches={result.Matches.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"unknown.hashes={result.UnknownHashes.Count}"));
+            return result.UnknownHashes.Count == 0 ? 0 : 3;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -702,6 +858,18 @@ internal static class Program
         return DuniaNameResolver.Load(input);
     }
 
+    private static FcbNameResolver LoadFcbResolver(string namesPath)
+    {
+        if (Path.GetExtension(namesPath).Equals(".xml", StringComparison.OrdinalIgnoreCase))
+        {
+            using FileStream xmlInput = File.OpenRead(namesPath);
+            return FcbNameResolver.LoadDefinitionsXml(xmlInput);
+        }
+
+        using StreamReader textInput = File.OpenText(namesPath);
+        return FcbNameResolver.Load(textInput);
+    }
+
     private static bool TryParseHash(string value, out ulong hash)
     {
         hash = 0;
@@ -724,6 +892,17 @@ internal static class Program
         1 => names[0],
         _ => $"<collision:{string.Join('|', names)}>",
     };
+
+    private static string RenderFcbName(uint hash, FcbNameResolver? resolver)
+    {
+        IReadOnlyList<string> names = resolver?.Resolve(hash) ?? [];
+        return names.Count switch
+        {
+            0 => FormattableString.Invariant($"<unknown:{hash:X8}>"),
+            1 => names[0],
+            _ => $"<collision:{string.Join('|', names)}>",
+        };
+    }
 
     private static int Probe(string fatPath)
     {

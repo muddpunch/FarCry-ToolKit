@@ -1,0 +1,7 @@
+# Exact CRC32 matches recovered from printable identifiers in FC_m64.dll.
+LibraryId
+NomadObject
+hid_DTCTH_ClassName
+SpawnThreadSafe
+LibraryPathName
+LibraryVersion

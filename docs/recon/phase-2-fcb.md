@@ -50,4 +50,23 @@ Both temporary fixtures were deleted and are not stored in the repository.
 
 ## Next gate
 
-Resolve FCB type/field CRC32 names from evidence-backed dictionaries and introduce typed value codecs. Keep mutation disabled for unresolved fields instead of guessing their semantics.
+## CRC32 name recovery — 2026-08-22
+
+FCB type and field names use case-sensitive CRC-32/ISO-HDLC (`poly=EDB88320`, `init/xorout=FFFFFFFF`). Plain-text lists and Dunia `binary_classes.xml` definitions are supported; XML parsing prohibits DTD resolution.
+
+Targeted ASCII scanning of the local `FC_m64.dll` against the eight hashes in entry 93 produced six exact matches:
+
+| Hash | Name |
+|---:|---|
+| `1EE89A13` | `LibraryId` |
+| `1F027DA1` | `NomadObject` |
+| `25368426` | `hid_DTCTH_ClassName` |
+| `723A4D89` | `SpawnThreadSafe` |
+| `7D2D7152` | `LibraryPathName` |
+| `EF14ED8F` | `LibraryVersion` |
+
+`CF68E402` and `E7046466` remain unresolved and are rendered as `<unknown:HASH>`. The FC2 definitions resolve none of the eight hashes, so FC2 names are not reused as FC5 labels.
+
+## Next gate
+
+Expand the evidence-backed FC5 dictionary across all discovered FCB resources, then introduce typed value codecs. Keep mutation disabled for unresolved fields instead of guessing their semantics.
