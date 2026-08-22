@@ -74,6 +74,7 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | SHA-256 verified replacement staging | Implemented |
 | FAT v10 entry parser | Implemented and validated against all 16 local FC5 indexes |
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
+| Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
@@ -123,6 +124,7 @@ Warnings are treated as errors.
 - `FatV10IndexSummaryReader` validates the confirmed 24-byte header, 20-byte entry envelope, and 8-byte trailer.
 - `FatV10IndexReader` decodes hashes, sizes, offsets, encryption flags, and LZ4/none metadata with paired-DAT bounds checks.
 - `FatV10IndexWriter` validates packed-field limits and serializes the confirmed FAT v10 envelope and entries.
+- `FatV10ArchivePatchBuilder` preserves the original DAT byte-for-byte, appends verified replacements, and rewrites only affected FAT metadata into separate outputs.
 - `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
