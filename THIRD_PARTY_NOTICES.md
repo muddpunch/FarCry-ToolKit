@@ -2,7 +2,7 @@
 
 ## Gibbed.Dunia
 
-The FAT v10 entry layout in `Dunia.Formats/Archives/FatV10/FatV10EntryReader.cs` is adapted from `EntrySerializerV10.cs` in [gibbed/Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia).
+The FAT v10 entry layout and Dunia CRC64 algorithm are adapted from `EntrySerializerV10.cs` and `CRC64.cs` in [gibbed/Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia).
 
 ```text
 zLib License

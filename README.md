@@ -73,6 +73,8 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | Pending-change set with Apply/Discard foundations | Implemented |
 | SHA-256 verified replacement staging | Implemented |
 | FAT v10 entry parser | Implemented and validated against all 16 local FC5 indexes |
+| FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
+| FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
 | FAT/DAT extraction and rebuilding | Not implemented |
@@ -120,6 +122,8 @@ Warnings are treated as errors.
 - `FatPrefixProbe` reports raw archive prefix evidence without assuming an unverified FAT v10 layout.
 - `FatV10IndexSummaryReader` validates the confirmed 24-byte header, 20-byte entry envelope, and 8-byte trailer.
 - `FatV10IndexReader` decodes hashes, sizes, offsets, encryption flags, and LZ4/none metadata with paired-DAT bounds checks.
+- `FatV10IndexWriter` validates packed-field limits and serializes the confirmed FAT v10 envelope and entries.
+- `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
@@ -160,7 +164,17 @@ Extract a DDS payload without overwriting an existing output file:
 dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
 ```
 
-Planned CLI verbs are `entry`, `pack`, `rebuild`, `refs`, and `hash`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+Planned CLI verbs are `entry`, `pack`, `rebuild`, and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+
+Compute a normalized FC5 resource-path CRC64 or resolve one from a local one-path-per-line name list:
+
+```powershell
+dotnet run --project Dunia.Cli -- hash compute "graphics\example.xbt"
+dotnet run --project Dunia.Cli -- hash resolve 0123456789ABCDEF "paths.txt"
+dotnet run --project Dunia.Cli -- list "common.fat" --names "paths.txt"
+```
+
+Blank lines and lines beginning with `#` or `;` are ignored. Multiple candidates for the same CRC64 are reported as collisions; unresolved entries remain explicit as `<unknown>`.
 
 ## Correctness requirements
 

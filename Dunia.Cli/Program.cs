@@ -2,6 +2,7 @@ using System.Globalization;
 using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
+using Dunia.Formats.Hashing;
 using Dunia.Formats.Textures;
 
 namespace Dunia.Cli;
@@ -30,8 +31,12 @@ internal static class Program
 
         Archive operations:
           dunia probe <archive.fat>
-          dunia list <archive.fat> [--limit N]
+          dunia list <archive.fat> [--limit N] [--names paths.txt]
           dunia get <archive.fat> <entry-index> <output-file>
+
+        Hash operations:
+          dunia hash compute <resource-path>
+          dunia hash resolve <16-digit-hash> <paths.txt>
         """;
 
     public static async Task<int> Main(string[] args)
@@ -49,14 +54,33 @@ internal static class Program
 
         if (args is ["list", var listFatPath])
         {
-            return ListEntries(listFatPath, 100);
+            return ListEntries(listFatPath, 100, null);
         }
 
         if (args is ["list", var limitedFatPath, "--limit", var rawLimit]
             && int.TryParse(rawLimit, NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
             && limit > 0)
         {
-            return ListEntries(limitedFatPath, limit);
+            return ListEntries(limitedFatPath, limit, null);
+        }
+
+        if (args is ["list", var namedFatPath, "--names", var namesPath])
+        {
+            return ListEntries(namedFatPath, 100, namesPath);
+        }
+
+        if (args is ["list", var namedLimitedFatPath, "--limit", var namedRawLimit, "--names", var limitedNamesPath]
+            && int.TryParse(namedRawLimit, NumberStyles.None, CultureInfo.InvariantCulture, out int namedLimit)
+            && namedLimit > 0)
+        {
+            return ListEntries(namedLimitedFatPath, namedLimit, limitedNamesPath);
+        }
+
+        if (args is ["list", var reversedFatPath, "--names", var reversedNamesPath, "--limit", var reversedRawLimit]
+            && int.TryParse(reversedRawLimit, NumberStyles.None, CultureInfo.InvariantCulture, out int reversedLimit)
+            && reversedLimit > 0)
+        {
+            return ListEntries(reversedFatPath, reversedLimit, reversedNamesPath);
         }
 
         if (args is ["get", var getFatPath, var rawIndex, var outputPath]
@@ -69,6 +93,20 @@ internal static class Program
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
+        }
+
+        if (args is ["hash", "compute", var resourcePath])
+        {
+            string normalized = DuniaPathHash.Normalize(resourcePath);
+            Console.WriteLine(FormattableString.Invariant($"hash={DuniaCrc64.Compute(normalized):X16}"));
+            Console.WriteLine($"path={normalized}");
+            return 0;
+        }
+
+        if (args is ["hash", "resolve", var rawHash, var hashNamesPath]
+            && TryParseHash(rawHash, out ulong hash))
+        {
+            return ResolveHash(hash, hashNamesPath);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -138,7 +176,7 @@ internal static class Program
         }
     }
 
-    private static int ListEntries(string fatPath, int limit)
+    private static int ListEntries(string fatPath, int limit, string? namesPath)
     {
         try
         {
@@ -147,8 +185,9 @@ internal static class Program
 
             using FileStream input = File.OpenRead(pair.FatPath);
             FatV10Index index = FatV10IndexReader.Read(input, datLength);
+            DuniaNameResolver? resolver = namesPath is null ? null : LoadResolver(namesPath);
 
-            Console.WriteLine("index\thash\toffset\tstored\tuncompressed\tcompression\tencrypted");
+            Console.WriteLine("index\thash\tname\toffset\tstored\tuncompressed\tcompression\tencrypted");
             int shown = Math.Min(index.Entries.Count, limit);
             for (int i = 0; i < shown; i++)
             {
@@ -159,9 +198,16 @@ internal static class Program
                     FatV10CompressionScheme.Lz4 => "lz4",
                     _ => throw new InvalidDataException($"Unsupported compression scheme: {entry.CompressionScheme}.")
                 };
+                IReadOnlyList<string> names = resolver?.Resolve(entry.NameHash) ?? [];
+                string name = names.Count switch
+                {
+                    0 => "<unknown>",
+                    1 => names[0],
+                    _ => $"<collision:{string.Join('|', names)}>",
+                };
 
                 Console.WriteLine(FormattableString.Invariant(
-                    $"{i}\t{entry.NameHash:X16}\t{entry.Offset}\t{entry.StoredSize}\t{entry.UncompressedSize}\t{compression}\t{entry.IsEncrypted.ToString().ToLowerInvariant()}"));
+                    $"{i}\t{entry.NameHash:X16}\t{name}\t{entry.Offset}\t{entry.StoredSize}\t{entry.UncompressedSize}\t{compression}\t{entry.IsEncrypted.ToString().ToLowerInvariant()}"));
             }
 
             Console.WriteLine(FormattableString.Invariant($"shown={shown}"));
@@ -173,6 +219,46 @@ internal static class Program
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
+    }
+
+    private static int ResolveHash(ulong hash, string namesPath)
+    {
+        try
+        {
+            IReadOnlyList<string> names = LoadResolver(namesPath).Resolve(hash);
+            Console.WriteLine(FormattableString.Invariant($"hash={hash:X16}"));
+            foreach (string name in names)
+            {
+                Console.WriteLine($"path={name}");
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"matches={names.Count}"));
+            return names.Count > 0 ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static DuniaNameResolver LoadResolver(string namesPath)
+    {
+        using StreamReader input = File.OpenText(namesPath);
+        return DuniaNameResolver.Load(input);
+    }
+
+    private static bool TryParseHash(string value, out ulong hash)
+    {
+        hash = 0;
+        ReadOnlySpan<char> span = value.AsSpan();
+        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            span = span[2..];
+        }
+
+        return span.Length is > 0 and <= 16
+            && ulong.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
     }
 
     private static int Probe(string fatPath)
