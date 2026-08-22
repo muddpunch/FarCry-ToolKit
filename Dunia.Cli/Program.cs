@@ -60,6 +60,7 @@ internal static class Program
           dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --dry-run <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --confirm-write <entry-index> <expected-hash> <replacement-file> [...]
+          dunia restore <archive.fat> --confirm-write <fat-backup-sha256> <dat-backup-sha256>
           dunia verify roundtrip <archive.fat>
           dunia verify replacement <archive.fat> <entry-index>
 
@@ -326,6 +327,16 @@ internal static class Program
         if (args.Length >= 6 && args[0] == "apply" && args[2] == "--confirm-write" && (args.Length - 3) % 3 == 0)
         {
             return await ApplyConfirmedAsync(args).ConfigureAwait(false);
+        }
+
+        if (args is ["restore", var restoreFatPath, "--confirm-write", var fatSha256, var datSha256]
+            && TryParseSha256(fatSha256, out string expectedFatSha256)
+            && TryParseSha256(datSha256, out string expectedDatSha256))
+        {
+            return await RestoreArchiveAsync(
+                restoreFatPath,
+                expectedFatSha256,
+                expectedDatSha256).ConfigureAwait(false);
         }
 
         if (args is ["verify", "roundtrip", var verifyFatPath])
@@ -1330,6 +1341,35 @@ internal static class Program
         }
     }
 
+    private static async Task<int> RestoreArchiveAsync(
+        string fatPath,
+        string expectedFatSha256,
+        string expectedDatSha256)
+    {
+        try
+        {
+            FatV10ArchiveRestoreResult result = await FatV10ArchiveRestoreService.RestoreAsync(
+                ArchivePair.FromIndex(fatPath),
+                expectedFatSha256,
+                expectedDatSha256).ConfigureAwait(false);
+            Console.WriteLine("restored=true");
+            Console.WriteLine($"fat.target={result.TargetPair.FatPath}");
+            Console.WriteLine($"dat.target={result.TargetPair.DatPath}");
+            Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+            Console.WriteLine($"fat.sha256={result.Backup.Fat.Sha256}");
+            Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+            Console.WriteLine($"dat.sha256={result.Backup.Dat.Sha256}");
+            Console.WriteLine(FormattableString.Invariant($"entries={result.ArchiveEntryCount}"));
+            Console.WriteLine($"verified={result.Verified.ToString().ToLowerInvariant()}");
+            return result.Verified ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static async Task<int> VerifyRoundTripAsync(string fatPath)
     {
         try
@@ -1498,6 +1538,18 @@ internal static class Program
 
         return span.Length == 16
             && ulong.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
+    }
+
+    private static bool TryParseSha256(string value, out string normalized)
+    {
+        normalized = string.Empty;
+        if (value.Length != 64 || value.Any(character => !Uri.IsHexDigit(character)))
+        {
+            return false;
+        }
+
+        normalized = value.ToUpperInvariant();
+        return true;
     }
 
     private static bool TryParseEntryIndex(string value, out int index) =>

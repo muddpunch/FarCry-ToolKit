@@ -136,6 +136,16 @@ The verified `common.fat/common.dat` copy containing the entry 93 mutation compl
 
 `fcb archive-mutate-apply` is gated by the literal `--confirm-write`, expected resource/type/field hashes, complete schema coverage, and a successful archive dry-run. It creates verified `.original` backups before publication. While rollback files still exist, it re-extracts and SHA-256-validates the staged replacement, requires exact mutated payload bytes, reparses the FCB, verifies the encoded target value and full schema coverage, and requires byte-exact FCB serialization. Any mismatch, exception, or cancellation restores both originals.
 
+## Confirmed in-place game validation — 2026-08-23
+
+The confirmed command applied the entry 93 mutation directly to the local `common.fat/common.dat` pair with `semantic.verified=true`. The mutated 120-byte payload had SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`; independent extraction resolved `SpawnThreadSafe=true`. Far Cry 5 completed the user-run test with no crash. The original pair was then restored and independently matched the immutable backups: FAT SHA-256 `7BFF1EF1FA6175F36DBC2546A1FFE5B499DEC70845879472686AE359E72DDDD8`, DAT SHA-256 `228CB95FD5918CC62E56BDB117912E8CCB9115A55845528CCA8C56690B0241D7`.
+
+## Confirmed archive restore — 2026-08-23
+
+`restore <archive.fat> --confirm-write <fat-sha256> <dat-sha256>` requires the expected hashes of both immutable `.original` files. It copies and durably flushes both backups to temporary files, verifies their hashes and FAT/DAT structure, publishes the pair while retaining rollback files, and rechecks the live hashes before deleting the rollback pair. Failure or cancellation restores both pre-command files; `.original` backups are never moved or overwritten.
+
+The command completed successfully against the local `common.fat/common.dat` backup pair with `entries=3401` and `verified=true`. Independent post-command checks found byte-identical live and `.original` hashes, valid FAT layout and DAT bounds, and no remaining temporary files.
+
 ## Next gate
 
-Exercise the confirmed in-place command against the local archive with the game closed, verify a second game load, then restore from the immutable `.original` pair before expanding mutation coverage beyond the validated entry 93 field.
+Add a read-only FCB mutation-plan command that reports the current typed value, requested encoded value, complete schema coverage, expected payload hash, and whether a write would be a no-op. Keep write coverage restricted to independently validated targets.

@@ -78,6 +78,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
 | Transactional in-place Apply service | Implemented and tested |
 | Confirmed in-place CLI Apply | Implemented; requires index plus expected hash |
+| Confirmed transactional archive restore | Implemented; requires both expected backup SHA-256 values |
 | CLI Apply dry-run | Implemented; builds and validates without modifying the source |
 | CLI byte-exact FAT/DAT round-trip verification | Implemented |
 | Real FC5 no-change FAT/DAT round-trip | Validated byte-exact on empty and compressed archive pairs |
@@ -97,7 +98,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | Schema-gated FCB field mutation | Implemented in the format library and atomic write-new CLI |
 | FCB mutation FAT/DAT dry-run | Implemented; validated against real `common.fat` entry 93 |
 | Verified FCB mutation archive copy | Implemented; source remains read-only and destination must be new |
-| Confirmed in-place FCB archive mutation | Implemented after successful game-load validation; requires `--confirm-write` |
+| Confirmed in-place FCB archive mutation | Implemented and game-load validated; requires `--confirm-write` |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -161,6 +162,7 @@ Warnings are treated as errors.
 - `FcbArchiveMutationDryRunService` rebuilds a temporary FAT/DAT pair, re-extracts the changed payload, and verifies untouched entries plus the complete source DAT prefix.
 - `FcbArchiveMutationCopyService` requires a successful dry-run, reproduces the same payload hash, publishes a new archive pair, and independently re-extracts the result before success.
 - `FatV10ArchivePatchApplyService` re-extracts and hashes every published replacement, then executes optional semantic validation while rollback files still exist; validation failures restore both original archive files.
+- `FatV10ArchiveRestoreService` validates immutable `.original` hashes, stages and validates the backup pair, then restores both files transactionally without deleting the backups.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
@@ -190,6 +192,7 @@ Build a separate archive pair with one or more uncompressed replacements. Source
 dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
 dotnet run --project Dunia.Cli -- apply "common.fat" --dry-run 12 "replacement.bin"
 dotnet run --project Dunia.Cli -- apply "common-copy.fat" --confirm-write 12 0123456789ABCDEF "replacement.bin"
+dotnet run --project Dunia.Cli -- restore "common-copy.fat" --confirm-write <fat-backup-sha256> <dat-backup-sha256>
 dotnet run --project Dunia.Cli -- verify roundtrip "common.fat"
 dotnet run --project Dunia.Cli -- verify replacement "common.fat" 0
 ```
