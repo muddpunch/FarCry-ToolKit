@@ -38,7 +38,9 @@ internal static class Program
           dunia get <archive.fat> <entry-index> <output-file>
           dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --dry-run <entry-index> <replacement-file> [...]
+          dunia apply <archive.fat> --confirm-write <entry-index> <expected-hash> <replacement-file> [...]
           dunia verify roundtrip <archive.fat>
+          dunia verify replacement <archive.fat> <entry-index>
 
         Hash operations:
           dunia hash compute <resource-path>
@@ -143,9 +145,20 @@ internal static class Program
             return await ApplyDryRunAsync(args).ConfigureAwait(false);
         }
 
+        if (args.Length >= 6 && args[0] == "apply" && args[2] == "--confirm-write" && (args.Length - 3) % 3 == 0)
+        {
+            return await ApplyConfirmedAsync(args).ConfigureAwait(false);
+        }
+
         if (args is ["verify", "roundtrip", var verifyFatPath])
         {
             return await VerifyRoundTripAsync(verifyFatPath).ConfigureAwait(false);
+        }
+
+        if (args is ["verify", "replacement", var replacementFatPath, var rawReplacementIndex]
+            && TryParseEntryIndex(rawReplacementIndex, out int replacementIndex))
+        {
+            return await VerifyReplacementAsync(replacementFatPath, replacementIndex).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -420,6 +433,63 @@ internal static class Program
         }
     }
 
+    private static async Task<int> ApplyConfirmedAsync(string[] args)
+    {
+        try
+        {
+            ArchivePair target = ArchivePair.FromIndex(args[1]);
+            Dictionary<int, (ulong ExpectedHash, string Path)> specifications =
+                ParseConfirmedReplacementPaths(args, 3);
+            using (FileStream fat = File.OpenRead(target.FatPath))
+            {
+                FatV10Index index = FatV10IndexReader.Read(fat, new FileInfo(target.DatPath).Length);
+                foreach ((int entryIndex, (ulong expectedHash, _)) in specifications)
+                {
+                    if ((uint)entryIndex >= (uint)index.Entries.Count)
+                    {
+                        throw new ArgumentOutOfRangeException(
+                            nameof(args),
+                            entryIndex,
+                            $"Entry index must be between 0 and {index.Entries.Count - 1}.");
+                    }
+
+                    ulong actualHash = index.Entries[entryIndex].NameHash;
+                    if (actualHash != expectedHash)
+                    {
+                        throw new InvalidDataException(
+                            FormattableString.Invariant(
+                                $"Entry {entryIndex} hash mismatch: expected {expectedHash:X16}, got {actualHash:X16}."));
+                    }
+                }
+            }
+
+            string stagingRoot = Path.Combine(Path.GetTempPath(), "DuniaToolkit");
+            using var store = new ReplacementStagingStore(stagingRoot);
+            Dictionary<int, StagedReplacement> replacements = await StageReplacementsAsync(
+                specifications.ToDictionary(item => item.Key, item => item.Value.Path),
+                store).ConfigureAwait(false);
+            FatV10ArchivePatchApplyResult result = await FatV10ArchivePatchApplyService.ApplyAsync(
+                target,
+                replacements,
+                store).ConfigureAwait(false);
+
+            Console.WriteLine("applied=true");
+            Console.WriteLine(FormattableString.Invariant($"replacements={result.Build.ReplacementCount}"));
+            Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+            Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
+            Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+            Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
+            Console.WriteLine($"backup.created={result.Backup.CreatedAny.ToString().ToLowerInvariant()}");
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static async Task<int> VerifyRoundTripAsync(string fatPath)
     {
         try
@@ -443,6 +513,32 @@ internal static class Program
         }
     }
 
+    private static async Task<int> VerifyReplacementAsync(string fatPath, int entryIndex)
+    {
+        try
+        {
+            FatV10ReplacementVerificationResult result = await FatV10ReplacementVerifier.VerifyAsync(
+                ArchivePair.FromIndex(fatPath),
+                entryIndex,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine(FormattableString.Invariant($"index={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"hash={result.NameHash:X16}"));
+            Console.WriteLine($"source.compression={result.SourceCompression.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"source.payload.sha256={result.SourcePayloadSha256}");
+            Console.WriteLine($"rebuilt.payload.sha256={result.RebuiltPayloadSha256}");
+            Console.WriteLine($"unchanged.entries.exact={result.UnchangedEntriesExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"original.dat.prefix.exact={result.OriginalDataPrefixExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine(FormattableString.Invariant($"rebuilt.offset={result.RebuiltOffset}"));
+            Console.WriteLine($"valid={result.IsValid.ToString().ToLowerInvariant()}");
+            return result.IsValid ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static Dictionary<int, string> ParseReplacementPaths(string[] args, int startIndex)
     {
         var replacements = new Dictionary<int, string>();
@@ -454,6 +550,32 @@ internal static class Program
             }
 
             if (!replacements.TryAdd(index, args[i + 1]))
+            {
+                throw new ArgumentException($"Duplicate replacement entry index: {index}");
+            }
+        }
+
+        return replacements;
+    }
+
+    private static Dictionary<int, (ulong ExpectedHash, string Path)> ParseConfirmedReplacementPaths(
+        string[] args,
+        int startIndex)
+    {
+        var replacements = new Dictionary<int, (ulong ExpectedHash, string Path)>();
+        for (int i = startIndex; i < args.Length; i += 3)
+        {
+            if (!TryParseEntryIndex(args[i], out int index))
+            {
+                throw new ArgumentException($"Invalid replacement entry index: {args[i]}");
+            }
+
+            if (!TryParseHash(args[i + 1], out ulong expectedHash))
+            {
+                throw new ArgumentException($"Invalid expected entry hash: {args[i + 1]}");
+            }
+
+            if (!replacements.TryAdd(index, (expectedHash, args[i + 2])))
             {
                 throw new ArgumentException($"Duplicate replacement entry index: {index}");
             }

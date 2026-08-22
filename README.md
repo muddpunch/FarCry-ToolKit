@@ -5,7 +5,7 @@ Work-in-progress modding toolkit for the PC version of **Far Cry 5**, built with
 The project aims to provide one safe application for browsing, extracting, inspecting, replacing, and rebuilding local Dunia 2 game resources. It targets offline game files only and does not interact with multiplayer services, anti-cheat, process memory, or a running game.
 
 > [!WARNING]
-> Archive parsing and writing are not ready for production use. Do not use the current build to modify a game installation.
+> Archive writing remains experimental. Validate replacements with `apply --dry-run` and use copied archives until the modified pair has passed an actual game-load test.
 
 ## What it will do
 
@@ -76,10 +76,13 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
 | Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
-| Transactional in-place Apply service | Implemented and tested; CLI exposure gated on real fixtures |
+| Transactional in-place Apply service | Implemented and tested |
+| Confirmed in-place CLI Apply | Implemented; requires index plus expected hash |
 | CLI Apply dry-run | Implemented; builds and validates without modifying the source |
 | CLI byte-exact FAT/DAT round-trip verification | Implemented |
 | Real FC5 no-change FAT/DAT round-trip | Validated byte-exact on empty and compressed archive pairs |
+| Replacement semantic round-trip verifier | Implemented |
+| Real FC5 LZ4 replacement round-trip | Validated on `common` entry 0 |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
@@ -161,7 +164,9 @@ Build a separate archive pair with one or more uncompressed replacements. Source
 ```powershell
 dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
 dotnet run --project Dunia.Cli -- apply "common.fat" --dry-run 12 "replacement.bin"
+dotnet run --project Dunia.Cli -- apply "common-copy.fat" --confirm-write 12 0123456789ABCDEF "replacement.bin"
 dotnet run --project Dunia.Cli -- verify roundtrip "common.fat"
+dotnet run --project Dunia.Cli -- verify replacement "common.fat" 0
 ```
 
 Example output shape:

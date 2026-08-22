@@ -59,6 +59,14 @@ No game-derived bytes are stored in this repository.
 
 The compressed `common` fixture contains 3,401 entries and a 182,265,474-byte DAT. Both temporary outputs were deleted after verification. In-place CLI Apply remains gated until an archive containing an actual replacement is independently validated.
 
+`verify replacement` then extracted compressed `common` entry 0 (`000ADB1D29834E28`), staged the decoded 2,488-byte payload as an uncompressed replacement, rebuilt a temporary pair, and extracted it again. Source and rebuilt payload SHA-256 values both matched `56929F8BF8D6AFE5524CEB8B34015B1C3CF8637B380A1261E6ACC3F6AAA56B19`. All 3,400 non-target FAT entries remained exact, and the complete original DAT remained an exact prefix of the rebuilt DAT. The rebuilt payload began at aligned offset 182,265,488. Temporary outputs were deleted.
+
+This validates the internal replacement pipeline against a real LZ4 entry. CLI in-place Apply remains gated on an independent extractor or successful game-load validation of a disposable copied archive.
+
+An independently built `Gibbed.FarCry5.Unpack` was then run against the rebuilt temporary `common` pair with a filter for `000ADB1D29834E28`. It parsed all 3,401 entries and extracted the replacement as `__UNKNOWN\gfx\000ADB1D29834E28.xbt`. The independent output was 2,488 bytes and matched the source payload SHA-256 exactly: `56929F8BF8D6AFE5524CEB8B34015B1C3CF8637B380A1261E6ACC3F6AAA56B19`.
+
+This clears the independent-extractor gate for explicit in-place CLI Apply. The CLI requires `--confirm-write`, an entry index, and its expected 64-bit name hash; a mismatch aborts before staging, backup, or publication. Actual game-install modification remains experimental until a copied modified pair passes a game-load test.
+
 ## Sources
 
 - https://github.com/gibbed/Gibbed.Dunia2
