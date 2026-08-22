@@ -146,6 +146,12 @@ The confirmed command applied the entry 93 mutation directly to the local `commo
 
 The command completed successfully against the local `common.fat/common.dat` backup pair with `entries=3401` and `verified=true`. Independent post-command checks found byte-identical live and `.original` hashes, valid FAT layout and DAT bounds, and no remaining temporary files.
 
+## Read-only mutation planning — 2026-08-23
+
+`fcb mutation-plan` validates the resource/type/field identities and complete schema coverage, projects the current and canonical requested values, encodes the request, performs the schema-gated mutation entirely in memory, and reports source/planned payload lengths and SHA-256 hashes. It performs no staging, backup, archive rebuild, or write.
+
+Against real `common.fat` entry 93, planning `false -> true` predicted the independently validated payload SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D` with `no-op=false`. Planning `false -> false` retained source SHA-256 `B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD` with `no-op=true`.
+
 ## Next gate
 
-Add a read-only FCB mutation-plan command that reports the current typed value, requested encoded value, complete schema coverage, expected payload hash, and whether a write would be a no-op. Keep write coverage restricted to independently validated targets.
+Make confirmed FCB apply short-circuit semantic no-ops before dry-run, backup creation, or archive rebuilding, while returning an explicit successful no-op result.

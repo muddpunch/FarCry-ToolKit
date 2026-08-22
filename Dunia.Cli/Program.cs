@@ -44,6 +44,7 @@ internal static class Program
           dunia fcb audit <input.fcb> <names.txt>
           dunia fcb schema-audit <input.fcb> <schema.txt>
           dunia fcb mutate <input.fcb> <output.fcb> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb mutation-plan <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
           dunia fcb archive-discover <archive.fat> <candidate-binary>
@@ -244,6 +245,29 @@ internal static class Program
                 expectedArchiveTypeHash,
                 expectedArchiveFieldHash,
                 archiveMutationValue).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "mutation-plan", var planArchivePath, var rawPlanEntryIndex,
+                var rawPlanResourceHash, var planSchemaPath, var rawPlanNodeIndex,
+                var rawPlanFieldIndex, var rawPlanTypeHash, var rawPlanFieldHash, var planValue]
+            && TryParseEntryIndex(rawPlanEntryIndex, out int planEntryIndex)
+            && TryParseResourceHash(rawPlanResourceHash, out ulong expectedPlanResourceHash)
+            && TryParseEntryIndex(rawPlanNodeIndex, out int planNodeIndex)
+            && TryParseEntryIndex(rawPlanFieldIndex, out int planFieldIndex)
+            && TryParseFcbHash(rawPlanTypeHash, out uint expectedPlanTypeHash)
+            && TryParseFcbHash(rawPlanFieldHash, out uint expectedPlanFieldHash))
+        {
+            return await PlanFcbArchiveMutationAsync(
+                planArchivePath,
+                planEntryIndex,
+                expectedPlanResourceHash,
+                planSchemaPath,
+                planNodeIndex,
+                planFieldIndex,
+                expectedPlanTypeHash,
+                expectedPlanFieldHash,
+                planValue).ConfigureAwait(false);
         }
 
         if (args is [
@@ -969,6 +993,58 @@ internal static class Program
             Console.WriteLine($"dat.prefix.exact={result.SourceDataPrefixExact.ToString().ToLowerInvariant()}");
             Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
             return result.IsVerified ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> PlanFcbArchiveMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        int nodeIndex,
+        int fieldIndex,
+        uint expectedTypeHash,
+        uint expectedFieldHash,
+        string value)
+    {
+        try
+        {
+            FcbArchiveMutationPlanResult result = await FcbArchiveMutationPlanService.CreateAsync(
+                ArchivePair.FromIndex(archivePath),
+                entryIndex,
+                expectedResourceHash,
+                LoadFcbValueSchema(schemaPath),
+                nodeIndex,
+                fieldIndex,
+                expectedTypeHash,
+                expectedFieldHash,
+                value).ConfigureAwait(false);
+            Console.WriteLine("read-only=true");
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine(FormattableString.Invariant($"node={result.NodeIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"field={result.FieldIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"type.hash={result.TypeHash:X8}"));
+            Console.WriteLine(FormattableString.Invariant($"field.hash={result.FieldHash:X8}"));
+            Console.WriteLine($"codec={result.Codec}");
+            Console.WriteLine($"current.value={result.CurrentValue}");
+            Console.WriteLine($"requested.value={result.RequestedValue}");
+            Console.WriteLine($"requested.encoded={result.RequestedEncodedHex}");
+            Console.WriteLine(FormattableString.Invariant($"schema.fields={result.SchemaFieldCount}"));
+            Console.WriteLine(FormattableString.Invariant($"schema.resolved={result.SchemaResolvedCount}"));
+            Console.WriteLine(FormattableString.Invariant($"payload.source.length={result.SourcePayloadLength}"));
+            Console.WriteLine($"payload.source.sha256={result.SourcePayloadSha256}");
+            Console.WriteLine(FormattableString.Invariant($"payload.planned.length={result.PlannedPayloadLength}"));
+            Console.WriteLine($"payload.planned.sha256={result.PlannedPayloadSha256}");
+            Console.WriteLine($"no-op={result.NoOp.ToString().ToLowerInvariant()}");
+            Console.WriteLine("ready=true");
+            return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {

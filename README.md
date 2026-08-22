@@ -99,6 +99,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | FCB mutation FAT/DAT dry-run | Implemented; validated against real `common.fat` entry 93 |
 | Verified FCB mutation archive copy | Implemented; source remains read-only and destination must be new |
 | Confirmed in-place FCB archive mutation | Implemented and game-load validated; requires `--confirm-write` |
+| Read-only FCB mutation plan | Implemented; reports typed values, encoded bytes, hashes, coverage, and no-op state |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -161,6 +162,7 @@ Warnings are treated as errors.
 - `FcbValueEncoder` canonically encodes schema-selected scalar, hash, string, and vector values in little-endian form.
 - `FcbArchiveMutationDryRunService` rebuilds a temporary FAT/DAT pair, re-extracts the changed payload, and verifies untouched entries plus the complete source DAT prefix.
 - `FcbArchiveMutationCopyService` requires a successful dry-run, reproduces the same payload hash, publishes a new archive pair, and independently re-extracts the result before success.
+- `FcbArchiveMutationPlanService` predicts the verified payload entirely in memory and reports canonical typed values, complete schema coverage, exact hashes, and semantic no-op state without staging or writes.
 - `FatV10ArchivePatchApplyService` re-extracts and hashes every published replacement, then executes optional semantic validation while rollback files still exist; validation failures restore both original archive files.
 - `FatV10ArchiveRestoreService` validates immutable `.original` hashes, stages and validates the backup pair, then restores both files transactionally without deleting the backups.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
@@ -235,6 +237,7 @@ Inspect an FCB using explicit CRC32 names and typed codecs, then require complet
 dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.fc5.txt" --schema "data\fcb-schema.fc5.txt" --values
 dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
 dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
+dotnet run --project Dunia.Cli -- fcb mutation-plan "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-apply "common.fat" --confirm-write 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true

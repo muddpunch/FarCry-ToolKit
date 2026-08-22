@@ -160,6 +160,66 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.False(File.Exists(target.DatPath + ".original"));
     }
 
+    [Fact]
+    public async Task MutationPlanReportsTypedValuesAndPredictedPayloadWithoutWrites()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair source = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(source.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationPlanResult result = await FcbArchiveMutationPlanService.CreateAsync(
+            source,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "false",
+            token);
+
+        Assert.Equal("true", result.CurrentValue);
+        Assert.Equal("false", result.RequestedValue);
+        Assert.Equal("00", result.RequestedEncodedHex);
+        Assert.False(result.NoOp);
+        Assert.NotEqual(result.SourcePayloadSha256, result.PlannedPayloadSha256);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(source.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(source.DatPath, token));
+        Assert.False(File.Exists(source.FatPath + ".original"));
+    }
+
+    [Fact]
+    public async Task MutationPlanCanonicalizesEquivalentValueAsNoOp()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        ArchivePair source = CreateArchive(fcb.Length, [.. fcb, 0xAA, 0xBB]);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationPlanResult result = await FcbArchiveMutationPlanService.CreateAsync(
+            source,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "1",
+            token);
+
+        Assert.Equal("true", result.RequestedValue);
+        Assert.Equal("01", result.RequestedEncodedHex);
+        Assert.True(result.NoOp);
+        Assert.Equal(result.SourcePayloadSha256, result.PlannedPayloadSha256);
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateArchive(int fcbLength, byte[] data)
