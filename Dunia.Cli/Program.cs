@@ -40,6 +40,9 @@ internal static class Program
           dunia fcb dump <input.fcb> [--names names.txt]
           dunia fcb audit <input.fcb> <names.txt>
           dunia fcb discover <input.fcb> <candidate-binary>
+          dunia fcb archive-audit <archive.fat> <names.txt>
+          dunia fcb archive-discover <archive.fat> <candidate-binary>
+          dunia fcb archive-discover <archive.fat> <candidate-binary> --output <names.txt>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -173,6 +176,23 @@ internal static class Program
         if (args is ["fcb", "discover", var discoveryFcbPath, var candidateBinaryPath])
         {
             return DiscoverFcbNames(discoveryFcbPath, candidateBinaryPath);
+        }
+
+        if (args is ["fcb", "archive-audit", var fcbArchivePath, var archiveNamesPath])
+        {
+            return await AuditFcbArchiveAsync(fcbArchivePath, archiveNamesPath).ConfigureAwait(false);
+        }
+
+        if (args is ["fcb", "archive-discover", var discoveryArchivePath, var archiveCandidatePath])
+        {
+            return await DiscoverFcbArchiveNamesAsync(discoveryArchivePath, archiveCandidatePath, null)
+                .ConfigureAwait(false);
+        }
+
+        if (args is ["fcb", "archive-discover", var outputArchivePath, var outputCandidatePath, "--output", var discoveredNamesPath])
+        {
+            return await DiscoverFcbArchiveNamesAsync(outputArchivePath, outputCandidatePath, discoveredNamesPath)
+                .ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -430,12 +450,22 @@ internal static class Program
         }
     }
 
-    private static void WriteFcbCoverage(string prefix, FcbNameCoverageReport report)
+    private static void WriteFcbCoverage(
+        string prefix,
+        FcbNameCoverageReport report,
+        bool includeHashes = true)
     {
         Console.WriteLine(FormattableString.Invariant($"{prefix}.occurrences={report.OccurrenceCount}"));
         Console.WriteLine(FormattableString.Invariant($"{prefix}.resolved={report.ResolvedCount}"));
         Console.WriteLine(FormattableString.Invariant($"{prefix}.unknown={report.UnknownCount}"));
         Console.WriteLine(FormattableString.Invariant($"{prefix}.collisions={report.CollisionCount}"));
+        if (!includeHashes)
+        {
+            Console.WriteLine(FormattableString.Invariant($"{prefix}.unknown.hashes={report.UnknownHashes.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"{prefix}.collision.hashes={report.CollisionHashes.Count}"));
+            return;
+        }
+
         foreach (uint hash in report.UnknownHashes)
         {
             Console.WriteLine(FormattableString.Invariant($"{prefix}.unknown.hash={hash:X8}"));
@@ -481,6 +511,134 @@ internal static class Program
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
+    }
+
+    private static async Task<int> AuditFcbArchiveAsync(string fatPath, string namesPath)
+    {
+        try
+        {
+            FcbArchiveAnalysisResult analysis = await AnalyzeFcbArchiveAsync(fatPath).ConfigureAwait(false);
+            FcbNameResolver resolver = LoadFcbResolver(namesPath);
+            FcbNameCoverageReport types = FcbNameCoverageAnalyzer.Analyze(
+                analysis.TypeHashOccurrences,
+                resolver);
+            FcbNameCoverageReport fields = FcbNameCoverageAnalyzer.Analyze(
+                analysis.FieldHashOccurrences,
+                resolver);
+
+            WriteFcbArchiveSummary(analysis);
+            WriteFcbCoverage("types", types, includeHashes: false);
+            WriteFcbCoverage("fields", fields, includeHashes: false);
+            bool complete = types.IsComplete && fields.IsComplete;
+            Console.WriteLine($"complete={complete.ToString().ToLowerInvariant()}");
+            return complete ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> DiscoverFcbArchiveNamesAsync(
+        string fatPath,
+        string candidatePath,
+        string? outputPath)
+    {
+        try
+        {
+            FcbArchiveAnalysisResult analysis = await AnalyzeFcbArchiveAsync(fatPath).ConfigureAwait(false);
+            IEnumerable<uint> hashes = analysis.TypeHashOccurrences.Keys
+                .Concat(analysis.FieldHashOccurrences.Keys);
+            using FileStream candidates = File.OpenRead(candidatePath);
+            FcbNameDiscoveryResult discovery = FcbNameDiscovery.ScanAscii(candidates, hashes);
+
+            WriteFcbArchiveSummary(analysis);
+            if (outputPath is null)
+            {
+                foreach (FcbNameDiscoveryMatch match in discovery.Matches
+                             .OrderBy(match => match.Hash)
+                             .ThenBy(match => match.Name))
+                {
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"match={match.Hash:X8}\tname={match.Name}\toffset={match.SourceOffset}"));
+                }
+            }
+            else
+            {
+                WriteDiscoveredFcbNames(outputPath, discovery);
+                Console.WriteLine($"output={Path.GetFullPath(outputPath)}");
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"targets={discovery.TargetHashCount}"));
+            Console.WriteLine(FormattableString.Invariant($"candidates={discovery.CandidateCount}"));
+            Console.WriteLine(FormattableString.Invariant($"matches={discovery.Matches.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"unknown.hashes={discovery.UnknownHashes.Count}"));
+            return discovery.UnknownHashes.Count == 0 ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static void WriteDiscoveredFcbNames(string outputPath, FcbNameDiscoveryResult discovery)
+    {
+        string fullPath = Path.GetFullPath(outputPath);
+        if (File.Exists(fullPath))
+        {
+            throw new IOException("FCB names output already exists.");
+        }
+
+        string? directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+        {
+            throw new DirectoryNotFoundException("FCB names output directory does not exist.");
+        }
+
+        string temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using (var file = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                using var writer = new StreamWriter(file, new System.Text.UTF8Encoding(false), leaveOpen: true);
+                writer.WriteLine("# Exact CRC32 matches discovered in the selected candidate binary.");
+                foreach (FcbNameDiscoveryMatch match in discovery.Matches
+                             .OrderBy(match => match.Hash)
+                             .ThenBy(match => match.Name, StringComparer.Ordinal))
+                {
+                    writer.WriteLine(FormattableString.Invariant($"{match.Hash:X8}\t{match.Name}"));
+                }
+
+                writer.Flush();
+                file.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullPath, false);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+    }
+
+    private static async Task<FcbArchiveAnalysisResult> AnalyzeFcbArchiveAsync(string fatPath)
+    {
+        ArchivePair pair = ArchivePair.FromIndex(fatPath);
+        await using FileStream fat = File.OpenRead(pair.FatPath);
+        await using FileStream data = File.OpenRead(pair.DatPath);
+        FatV10Index index = FatV10IndexReader.Read(fat, data.Length);
+        return await FcbArchiveAnalyzer.AnalyzeAsync(data, index).ConfigureAwait(false);
+    }
+
+    private static void WriteFcbArchiveSummary(FcbArchiveAnalysisResult analysis)
+    {
+        Console.WriteLine(FormattableString.Invariant($"resources={analysis.Resources.Count}"));
+        Console.WriteLine(FormattableString.Invariant($"scanned={analysis.ScannedEntryCount}"));
+        Console.WriteLine(FormattableString.Invariant($"skipped={analysis.SkippedEntryCount}"));
+        Console.WriteLine(FormattableString.Invariant($"types.unique={analysis.TypeHashOccurrences.Count}"));
+        Console.WriteLine(FormattableString.Invariant($"fields.unique={analysis.FieldHashOccurrences.Count}"));
     }
 
     private static int ListEntries(string fatPath, int limit, string? namesPath)

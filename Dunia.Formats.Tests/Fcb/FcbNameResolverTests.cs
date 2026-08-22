@@ -20,6 +20,25 @@ public sealed class FcbNameResolverTests
     }
 
     [Fact]
+    public void LoadAcceptsAndValidatesExplicitHashMappings()
+    {
+        uint hash = DuniaCrc32.Compute("MappedName");
+        using var input = new StringReader($"{hash:X8}\tMappedName\n");
+
+        FcbNameResolver resolver = FcbNameResolver.Load(input);
+
+        Assert.Equal("MappedName", Assert.Single(resolver.Resolve(hash)));
+    }
+
+    [Fact]
+    public void LoadRejectsIncorrectExplicitHashMapping()
+    {
+        using var input = new StringReader("12345678\tWrongName\n");
+
+        Assert.Throws<InvalidDataException>(() => FcbNameResolver.Load(input));
+    }
+
+    [Fact]
     public void CoverageReportsUnknownHashesWithoutInventingNames()
     {
         var resolver = new FcbNameResolver();

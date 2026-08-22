@@ -1,4 +1,5 @@
 using Dunia.Formats.Hashing;
+using System.Globalization;
 using System.Xml;
 
 namespace Dunia.Formats.Fcb;
@@ -17,15 +18,34 @@ public sealed class FcbNameResolver
 
         var resolver = new FcbNameResolver();
         string? line;
+        int lineNumber = 0;
         while ((line = input.ReadLine()) is not null)
         {
+            lineNumber++;
             string candidate = line.Trim();
             if (candidate.Length == 0 || candidate.StartsWith('#') || candidate.StartsWith(';'))
             {
                 continue;
             }
 
-            resolver.Add(candidate);
+            int separator = candidate.IndexOf('\t');
+            if (separator < 0)
+            {
+                resolver.Add(candidate);
+                continue;
+            }
+
+            ReadOnlySpan<char> rawHash = candidate.AsSpan(0, separator);
+            string name = candidate[(separator + 1)..];
+            if (rawHash.Length != 8
+                || !uint.TryParse(rawHash, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out uint hash)
+                || string.IsNullOrWhiteSpace(name)
+                || DuniaCrc32.Compute(name) != hash)
+            {
+                throw new InvalidDataException($"Invalid FCB name mapping at line {lineNumber}.");
+            }
+
+            resolver.Add(name);
         }
 
         return resolver;

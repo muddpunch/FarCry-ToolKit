@@ -69,4 +69,30 @@ Targeted ASCII scanning of the local `FC_m64.dll` against the eight hashes in en
 
 ## Next gate
 
-Expand the evidence-backed FC5 dictionary across all discovered FCB resources, then introduce typed value codecs. Keep mutation disabled for unresolved fields instead of guessing their semantics.
+## Archive-wide validation — 2026-08-22
+
+`common.fat` was analyzed read-only in one pass. Every signature-positive payload parsed successfully:
+
+| Property | Value |
+|---|---:|
+| FAT entries | 3,401 |
+| Eligible/scanned entries | 3,366 |
+| Size-filtered entries | 35 |
+| Parsed FCB resources | 343 |
+| Unique type hashes | 4,402 |
+| Type occurrences | 197,875 |
+| Unique field hashes | 8,660 |
+| Field occurrences | 1,026,097 |
+
+Targeted ASCII discovery against the local `FC_m64.dll` checked 13,345,198 printable candidates against 12,932 distinct FCB hashes and emitted 11,611 exact CRC32 candidate mappings. Re-auditing with the generated map produced:
+
+| Category | Resolved occurrences | Unknown occurrences | Collision occurrences | Unknown unique hashes |
+|---|---:|---:|---:|---:|
+| Types | 194,498 | 3,316 | 61 | 713 |
+| Fields | 925,153 | 100,876 | 68 | 612 |
+
+Generated maps use verified `HASH<TAB>NAME` records, are atomically published without overwriting existing files, and retain every collision candidate. The local generated map is not committed.
+
+## Next gate
+
+Classify raw field payloads by evidence-backed codecs and add read-only typed projections. Keep mutation disabled for unresolved or ambiguous fields.
