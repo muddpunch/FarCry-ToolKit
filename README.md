@@ -76,6 +76,7 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
 | Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
+| Transactional in-place Apply service | Implemented and tested; CLI exposure gated on real fixtures |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
@@ -127,6 +128,7 @@ Warnings are treated as errors.
 - `FatV10IndexWriter` validates packed-field limits and serializes the confirmed FAT v10 envelope and entries.
 - `FatV10ArchivePatchBuilder` preserves the original DAT byte-for-byte, appends verified replacements, and rewrites only affected FAT metadata into separate outputs.
 - `FatV10ArchivePatchFileBuilder` durably writes, reparses, and publishes a new archive pair without modifying the source pair or overwriting existing outputs.
+- `FatV10ArchivePatchApplyService` builds first, creates permanent backups, publishes both files with rollback, and validates the live pair before deleting rollback files.
 - `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
