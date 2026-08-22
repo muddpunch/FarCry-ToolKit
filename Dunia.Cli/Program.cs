@@ -38,6 +38,8 @@ internal static class Program
           dunia fcb scan <archive.fat> [--limit N]
           dunia fcb hash <case-sensitive-name>
           dunia fcb dump <input.fcb> [--names names.txt]
+          dunia fcb dump <input.fcb> --values
+          dunia fcb dump <input.fcb> --names <names.txt> --values
           dunia fcb audit <input.fcb> <names.txt>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
@@ -160,12 +162,27 @@ internal static class Program
 
         if (args is ["fcb", "dump", var dumpedFcbPath])
         {
-            return DumpFcb(dumpedFcbPath, null);
+            return DumpFcb(dumpedFcbPath, null, false);
         }
 
         if (args is ["fcb", "dump", var namedFcbPath, "--names", var fcbNamesPath])
         {
-            return DumpFcb(namedFcbPath, fcbNamesPath);
+            return DumpFcb(namedFcbPath, fcbNamesPath, false);
+        }
+
+        if (args is ["fcb", "dump", var valuedFcbPath, "--values"])
+        {
+            return DumpFcb(valuedFcbPath, null, true);
+        }
+
+        if (args is ["fcb", "dump", var namedValuedFcbPath, "--names", var valueNamesPath, "--values"])
+        {
+            return DumpFcb(namedValuedFcbPath, valueNamesPath, true);
+        }
+
+        if (args is ["fcb", "dump", var reversedValuedFcbPath, "--values", "--names", var reversedValueNamesPath])
+        {
+            return DumpFcb(reversedValuedFcbPath, reversedValueNamesPath, true);
         }
 
         if (args is ["fcb", "audit", var auditedFcbPath, var auditedNamesPath])
@@ -378,7 +395,7 @@ internal static class Program
         }
     }
 
-    private static int DumpFcb(string path, string? namesPath)
+    private static int DumpFcb(string path, string? namesPath, bool includeValues)
     {
         try
         {
@@ -400,8 +417,9 @@ internal static class Program
                 for (int fieldIndex = 0; fieldIndex < node.Fields.Count; fieldIndex++)
                 {
                     FcbField field = node.Fields[fieldIndex];
+                    string values = includeValues ? RenderFcbValues(field) : string.Empty;
                     Console.WriteLine(FormattableString.Invariant(
-                        $"field={nodeIndex}.{fieldIndex}\thash={field.NameHash:X8}\tname={RenderFcbName(field.NameHash, resolver)}\tbytes={field.Data.Length}\treference={field.IsReference.ToString().ToLowerInvariant()}"));
+                        $"field={nodeIndex}.{fieldIndex}\thash={field.NameHash:X8}\tname={RenderFcbName(field.NameHash, resolver)}\tbytes={field.Data.Length}\treference={field.IsReference.ToString().ToLowerInvariant()}{values}"));
                 }
 
                 for (int childIndex = 0; childIndex < node.Children.Count; childIndex++)
@@ -421,6 +439,19 @@ internal static class Program
             return 1;
         }
     }
+
+    private static string RenderFcbValues(FcbField field)
+    {
+        FcbValueProjection projection = FcbValueProjector.Project(field);
+        string candidates = projection.Candidates.Count == 0
+            ? "<none>"
+            : string.Join(';', projection.Candidates.Select(candidate =>
+                $"{candidate.Kind}:{candidate.Evidence}={EscapeFcbValue(candidate.Value)}"));
+        return $"\traw={projection.RawHex}\tvalue.candidates={candidates}";
+    }
+
+    private static string EscapeFcbValue(string value) =>
+        $"\"{value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
 
     private static int AuditFcbNames(string path, string namesPath)
     {

@@ -92,6 +92,7 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | FCB v2 writer and byte-exact verifier | Implemented; validated on uncompressed and LZ4-backed real FC5 fixtures |
 | FCB CRC32 hashing, name resolution, coverage audit, and binary discovery | Implemented; unresolved hashes remain explicit |
 | Archive-wide FCB analysis and name discovery | Implemented; validated across real `common.fat` |
+| Read-only FCB typed value projections | Implemented; ambiguity and evidence are explicit |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -147,6 +148,7 @@ Warnings are treated as errors.
 - `FcbArchiveScanner` locates FCB payloads inside FAT/DAT pairs without requiring resolved filenames.
 - `FcbArchiveAnalyzer` parses every eligible FCB payload in one archive pass and aggregates type/field hash occurrences.
 - `FcbNameDiscovery` scans printable binary identifiers only against hashes present in a selected FCB and retains source offsets as evidence.
+- `FcbValueProjector` exposes raw hex plus structural or size-compatible string, boolean, integer, IEEE-754, and vector candidates without mutating fields.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 

@@ -95,4 +95,15 @@ Generated maps use verified `HASH<TAB>NAME` records, are atomically published wi
 
 ## Next gate
 
-Classify raw field payloads by evidence-backed codecs and add read-only typed projections. Keep mutation disabled for unresolved or ambiguous fields.
+## Read-only value projections — 2026-08-22
+
+`FcbValueProjector` always retains raw hex and emits zero or more explicitly qualified candidates:
+
+- `Structural`: currently limited to complete printable ASCII strings terminated by NUL.
+- `SizeCompatible`: boolean, signed/unsigned integers, IEEE-754 values, and 2/3/4-component binary32 vectors based only on byte length.
+
+No size-compatible candidate is selected automatically. Real entry 93 exposes `SNomadDbLibLoader` and `Retargeting_ObjectSettings` as structural strings while its 1/4/8-byte fields remain visibly ambiguous. Running the projection does not modify the graph; the fixture still passes byte-exact SHA-256 round-trip verification.
+
+## Next gate
+
+Add an evidence-backed external schema mapping `(node type hash, field hash) -> codec` to disambiguate projections. Keep mutation disabled when the schema is absent, conflicting, or incompatible with payload length.
