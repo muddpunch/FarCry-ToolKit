@@ -64,6 +64,92 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyRunsSemanticValidationBeforeRemovingRollbackFiles()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair pair = CreatePair([1]);
+        string replacementPath = Path.Combine(directory, "replacement.bin");
+        await File.WriteAllBytesAsync(replacementPath, [9, 8], token);
+        using var store = new ReplacementStagingStore(directory);
+        StagedReplacement replacement = await store.StageAsync(replacementPath, token);
+        bool validated = false;
+
+        await FatV10ArchivePatchApplyService.ApplyAsync(
+            pair,
+            new Dictionary<int, StagedReplacement> { [0] = replacement },
+            store,
+            async (published, cancellationToken) =>
+            {
+                using FileStream fat = File.OpenRead(published.FatPath);
+                FatV10Entry entry = Assert.Single(FatV10IndexReader.Read(
+                    fat,
+                    new FileInfo(published.DatPath).Length).Entries);
+                await using FileStream data = File.OpenRead(published.DatPath);
+                await using var payload = new MemoryStream();
+                await FatV10PayloadExtractor.ExtractAsync(data, entry, payload, cancellationToken);
+                Assert.Equal(new byte[] { 9, 8 }, payload.ToArray());
+                Assert.Equal(2, Directory.EnumerateFiles(directory, "*.rollback-*.tmp").Count());
+                validated = true;
+            },
+            token);
+
+        Assert.True(validated);
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
+    [Fact]
+    public async Task SemanticValidationFailureRestoresBothOriginalFiles()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair pair = CreatePair([1, 2, 3]);
+        byte[] originalFat = await File.ReadAllBytesAsync(pair.FatPath, token);
+        byte[] originalDat = await File.ReadAllBytesAsync(pair.DatPath, token);
+        string replacementPath = Path.Combine(directory, "replacement.bin");
+        await File.WriteAllBytesAsync(replacementPath, [9, 8], token);
+        using var store = new ReplacementStagingStore(directory);
+        StagedReplacement replacement = await store.StageAsync(replacementPath, token);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            FatV10ArchivePatchApplyService.ApplyAsync(
+                pair,
+                new Dictionary<int, StagedReplacement> { [0] = replacement },
+                store,
+                static (_, _) => throw new InvalidDataException("Semantic validation failed."),
+                token));
+
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(pair.FatPath, token));
+        Assert.Equal(originalDat, await File.ReadAllBytesAsync(pair.DatPath, token));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
+    [Fact]
+    public async Task CancellationDuringSemanticValidationRestoresBothOriginalFiles()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair pair = CreatePair([1, 2, 3]);
+        byte[] originalFat = await File.ReadAllBytesAsync(pair.FatPath, token);
+        byte[] originalDat = await File.ReadAllBytesAsync(pair.DatPath, token);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var store = new ReplacementStagingStore(directory);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            FatV10ArchivePatchApplyService.ApplyAsync(
+                pair,
+                new Dictionary<int, StagedReplacement>(),
+                store,
+                (_, _) =>
+                {
+                    cancellation.Cancel();
+                    return Task.CompletedTask;
+                },
+                cancellation.Token));
+
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(pair.FatPath, token));
+        Assert.Equal(originalDat, await File.ReadAllBytesAsync(pair.DatPath, token));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
+    [Fact]
     public async Task ApplyFailureBeforeBackupLeavesSourceUnchanged()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -111,12 +197,14 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
             2,
             1);
 
-        Assert.Throws<InvalidDataException>(() => FatV10ArchivePatchApplyService.PublishWithRollback(
+        await Assert.ThrowsAsync<InvalidDataException>(() => FatV10ArchivePatchApplyService.PublishWithRollbackAsync(
             target,
             built,
             rollbackFat,
             rollbackDat,
-            expected));
+            expected,
+            static (_, _) => Task.CompletedTask,
+            token));
 
         Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath, token));
         Assert.Equal(originalDat, await File.ReadAllBytesAsync(target.DatPath, token));

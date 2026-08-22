@@ -130,4 +130,4 @@ A real copy built from `common.fat` entry 93 passed independent extraction, comp
 
 ## Next gate
 
-Perform a manual game-load test using the copied pair. Before exposing in-place FCB apply, extend `FatV10ArchivePatchApplyService` so semantic post-publication validation executes while rollback files still exist.
+Perform a manual game-load test using the copied pair. `FatV10ArchivePatchApplyService` now accepts an asynchronous semantic validator that runs against the published pair while both rollback files still exist; exceptions and cancellation restore both originals before returning. Keep in-place FCB mutation unavailable until the manual test succeeds.

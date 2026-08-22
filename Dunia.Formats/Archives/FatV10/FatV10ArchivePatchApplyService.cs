@@ -4,15 +4,29 @@ namespace Dunia.Formats.Archives.FatV10;
 
 public static class FatV10ArchivePatchApplyService
 {
+    public static Task<FatV10ArchivePatchApplyResult> ApplyAsync(
+        ArchivePair target,
+        IReadOnlyDictionary<int, StagedReplacement> replacements,
+        ReplacementStagingStore stagingStore,
+        CancellationToken cancellationToken = default) =>
+        ApplyAsync(
+            target,
+            replacements,
+            stagingStore,
+            static (_, _) => Task.CompletedTask,
+            cancellationToken);
+
     public static async Task<FatV10ArchivePatchApplyResult> ApplyAsync(
         ArchivePair target,
         IReadOnlyDictionary<int, StagedReplacement> replacements,
         ReplacementStagingStore stagingStore,
+        Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(replacements);
         ArgumentNullException.ThrowIfNull(stagingStore);
+        ArgumentNullException.ThrowIfNull(validatePublishedAsync);
         cancellationToken.ThrowIfCancellationRequested();
 
         string token = Guid.NewGuid().ToString("N");
@@ -36,7 +50,14 @@ public static class FatV10ArchivePatchApplyService
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
-            PublishWithRollback(target, builtPair, rollbackFatPath, rollbackDatPath, fileBuild.Build);
+            await PublishWithRollbackAsync(
+                target,
+                builtPair,
+                rollbackFatPath,
+                rollbackDatPath,
+                fileBuild.Build,
+                validatePublishedAsync,
+                cancellationToken).ConfigureAwait(false);
             publicationSucceeded = true;
             return new(backup, fileBuild.Build);
         }
@@ -52,12 +73,14 @@ public static class FatV10ArchivePatchApplyService
         }
     }
 
-    internal static void PublishWithRollback(
+    internal static async Task PublishWithRollbackAsync(
         ArchivePair target,
         ArchivePair built,
         string rollbackFatPath,
         string rollbackDatPath,
-        FatV10ArchivePatchBuildResult expected)
+        FatV10ArchivePatchBuildResult expected,
+        Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
+        CancellationToken cancellationToken)
     {
         bool originalFatMoved = false;
         bool originalDatMoved = false;
@@ -75,6 +98,8 @@ public static class FatV10ArchivePatchApplyService
             File.Move(built.FatPath, target.FatPath, false);
             builtFatMoved = true;
             ValidatePublishedPair(target, expected);
+            await validatePublishedAsync(target, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
         }
         catch (Exception publicationError)
         {
