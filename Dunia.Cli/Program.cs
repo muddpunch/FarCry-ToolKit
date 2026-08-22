@@ -26,6 +26,7 @@ internal static class Program
           rebuild   Rebuild an archive pair
           refs      Resolve resource references
           hash      Compute or resolve Dunia hashes
+          verify    Verify archive invariants and round-trips
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
@@ -37,6 +38,7 @@ internal static class Program
           dunia get <archive.fat> <entry-index> <output-file>
           dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --dry-run <entry-index> <replacement-file> [...]
+          dunia verify roundtrip <archive.fat>
 
         Hash operations:
           dunia hash compute <resource-path>
@@ -139,6 +141,11 @@ internal static class Program
         if (args.Length >= 5 && args[0] == "apply" && args[2] == "--dry-run" && (args.Length - 3) % 2 == 0)
         {
             return await ApplyDryRunAsync(args).ConfigureAwait(false);
+        }
+
+        if (args is ["verify", "roundtrip", var verifyFatPath])
+        {
+            return await VerifyRoundTripAsync(verifyFatPath).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -410,6 +417,29 @@ internal static class Program
             {
                 Directory.Delete(outputDirectory, true);
             }
+        }
+    }
+
+    private static async Task<int> VerifyRoundTripAsync(string fatPath)
+    {
+        try
+        {
+            FatV10ArchiveRoundTripVerificationResult result = await FatV10ArchiveRoundTripVerifier.VerifyAsync(
+                ArchivePair.FromIndex(fatPath),
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine($"fat.source.sha256={result.SourceFatSha256}");
+            Console.WriteLine($"fat.output.sha256={result.OutputFatSha256}");
+            Console.WriteLine($"dat.source.sha256={result.SourceDatSha256}");
+            Console.WriteLine($"dat.output.sha256={result.OutputDatSha256}");
+            Console.WriteLine(FormattableString.Invariant($"fat.length={result.FatLength}"));
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.DatLength}"));
+            Console.WriteLine($"byte-exact={result.IsByteExact.ToString().ToLowerInvariant()}");
+            return result.IsByteExact ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
         }
     }
 

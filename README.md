@@ -58,7 +58,7 @@ patch.dat          -> patch.dat.original
 
 An existing `.original` file is never overwritten. Backup publication is atomic, concurrent calls create exactly one backup, and temporary files are removed after success, failure, or cancellation.
 
-Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact round-trip tests against real FC5 fixtures.
+In-place CLI writes remain disabled until archives containing replacements are independently validated. No-change FAT/DAT rebuilding now passes byte-exact SHA-256 round-trips against real empty and compressed FC5 archive pairs.
 
 ## Current status
 
@@ -78,6 +78,8 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
 | Transactional in-place Apply service | Implemented and tested; CLI exposure gated on real fixtures |
 | CLI Apply dry-run | Implemented; builds and validates without modifying the source |
+| CLI byte-exact FAT/DAT round-trip verification | Implemented |
+| Real FC5 no-change FAT/DAT round-trip | Validated byte-exact on empty and compressed archive pairs |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
@@ -159,6 +161,7 @@ Build a separate archive pair with one or more uncompressed replacements. Source
 ```powershell
 dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
 dotnet run --project Dunia.Cli -- apply "common.fat" --dry-run 12 "replacement.bin"
+dotnet run --project Dunia.Cli -- verify roundtrip "common.fat"
 ```
 
 Example output shape:

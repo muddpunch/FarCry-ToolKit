@@ -48,6 +48,17 @@ FC5 compressed payloads are raw LZ4 blocks without an additional container heade
 
 No game-derived bytes are stored in this repository.
 
+## Real archive writer validation — 2026-08-22
+
+`verify roundtrip` rebuilt two local FC5 archive pairs without replacements into temporary files and compared source/output SHA-256 values:
+
+| Fixture | FAT SHA-256 | DAT SHA-256 | Result |
+|---|---|---|---|
+| `patch_english_feminine` | `DAB00650D43859A070B58451C119B283A8C495D095DD21E501DE671165EF3D91` | `E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855` | byte-exact |
+| `common` | `7BFF1EF1FA6175F36DBC2546A1FFE5B499DEC70845879472686AE359E72DDDD8` | `228CB95FD5918CC62E56BDB117912E8CCB9115A55845528CCA8C56690B0241D7` | byte-exact |
+
+The compressed `common` fixture contains 3,401 entries and a 182,265,474-byte DAT. Both temporary outputs were deleted after verification. In-place CLI Apply remains gated until an archive containing an actual replacement is independently validated.
+
 ## Sources
 
 - https://github.com/gibbed/Gibbed.Dunia2
