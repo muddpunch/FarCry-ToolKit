@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Fcb;
@@ -106,6 +107,7 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
             target,
             0,
             0x0123456789ABCDEF,
+            Convert.ToHexString(SHA256.HashData(fcb)),
             schema,
             0,
             0,
@@ -147,6 +149,7 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
             target,
             0,
             0x0123456789ABCDEF,
+            Convert.ToHexString(SHA256.HashData(fcb)),
             schema,
             0,
             0,
@@ -181,6 +184,7 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
             target,
             0,
             0,
+            Convert.ToHexString(SHA256.HashData(fcb)),
             schema,
             0,
             0,
@@ -194,6 +198,41 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.Equal(fcb, await File.ReadAllBytesAsync(target.DatPath, token));
         Assert.False(File.Exists(target.FatPath + ".original"));
         Assert.False(File.Exists(target.DatPath + ".original"));
+    }
+
+    [Fact]
+    public async Task ApplyAsyncRejectsStalePlanBeforeBackupOrArchiveWrite()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair target = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            FcbArchiveMutationApplyService.ApplyAsync(
+                target,
+                0,
+                0x0123456789ABCDEF,
+                new string('0', 64),
+                schema,
+                0,
+                0,
+                0x10,
+                0x20,
+                "false",
+                directory,
+                token));
+
+        Assert.Contains("Source payload SHA-256 mismatch", error.Message, StringComparison.Ordinal);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath, token));
+        Assert.False(File.Exists(target.FatPath + ".original"));
+        Assert.False(File.Exists(target.DatPath + ".original"));
+        Assert.Empty(Directory.EnumerateDirectories(directory, "fcb-dryrun-*"));
+        Assert.Empty(Directory.EnumerateDirectories(directory, "session-*"));
     }
 
     [Fact]

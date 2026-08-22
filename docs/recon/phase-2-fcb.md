@@ -134,7 +134,7 @@ The verified `common.fat/common.dat` copy containing the entry 93 mutation compl
 
 ## Confirmed in-place FCB apply — 2026-08-23
 
-`fcb archive-mutate-apply` is gated by the literal `--confirm-write`, expected resource/type/field hashes, complete schema coverage, and a successful archive dry-run. It creates verified `.original` backups before publication. While rollback files still exist, it re-extracts and SHA-256-validates the staged replacement, requires exact mutated payload bytes, reparses the FCB, verifies the encoded target value and full schema coverage, and requires byte-exact FCB serialization. Any mismatch, exception, or cancellation restores both originals.
+`fcb archive-mutate-apply` is gated by the literal `--confirm-write`, expected resource/type/field hashes, the planned source payload SHA-256, complete schema coverage, and a successful archive dry-run. It creates verified `.original` backups before publication. While rollback files still exist, it re-extracts and SHA-256-validates the staged replacement, requires exact mutated payload bytes, reparses the FCB, verifies the encoded target value and full schema coverage, and requires byte-exact FCB serialization. Any mismatch, exception, or cancellation restores both originals.
 
 ## Confirmed in-place game validation — 2026-08-23
 
@@ -158,6 +158,12 @@ Confirmed FCB apply now executes the read-only plan first. A semantic no-op retu
 
 The behavior passed against real `common.fat` entry 93 for `false -> false`. Independent before/after checks confirmed identical FAT/DAT lengths, last-write timestamps, and SHA-256 values.
 
+## Plan-bound confirmed apply — 2026-08-23
+
+Confirmed FCB apply now requires the exact `payload.source.sha256` emitted by `mutation-plan`. A mismatch is rejected before no-op handling, dry-run, staging, backup creation, or archive rebuilding. The result reports both source and planned/published payload hashes.
+
+A real entry 93 invocation with a stale all-zero hash returned exit code `1` and left FAT/DAT unchanged. The matching source hash retained the verified no-op path. Expected validation errors are now mapped consistently to concise CLI messages without unhandled stack traces.
+
 ## Next gate
 
-Bind confirmed apply to the read-only plan by requiring the expected source payload SHA-256. Reject stale plans before dry-run, backup creation, or archive rebuilding.
+Add source-pair stability verification to transactional apply so the FAT/DAT pair used for building cannot be replaced between build completion and backup/publication.

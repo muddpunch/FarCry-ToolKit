@@ -240,14 +240,14 @@ dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-
 dotnet run --project Dunia.Cli -- fcb mutation-plan "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb archive-mutate-apply "common.fat" --confirm-write 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
+dotnet run --project Dunia.Cli -- fcb archive-mutate-apply "common.fat" --confirm-write 93 0514813338C00498 B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 ```
 
 Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
 `fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
 `fcb archive-mutate-dry-run` additionally requires the expected 64-bit resource hash and deletes its rebuilt pair after end-to-end verification.
 `fcb archive-mutate-copy` repeats that verification before publishing a separate FAT/DAT pair and refuses existing destination files.
-`fcb archive-mutate-apply` additionally creates immutable `.original` backups, re-extracts and hashes the published replacement, reparses and schema-audits the FCB, then rolls back both archive files on any mismatch, exception, or cancellation.
+`fcb archive-mutate-apply` requires the exact source payload SHA-256 emitted by `mutation-plan`, then creates immutable `.original` backups, re-extracts and hashes the published replacement, reparses and schema-audits the FCB, and rolls back both archive files on any mismatch, exception, or cancellation.
 
 ## Correctness requirements
 

@@ -8,6 +8,7 @@ public sealed record FcbArchiveMutationApplyResult(
     int EntryIndex,
     ulong ResourceNameHash,
     FcbValueKind Codec,
+    string SourcePayloadSha256,
     int PayloadLength,
     string PayloadSha256,
     int ArchiveEntryCount,

@@ -51,7 +51,7 @@ internal static class Program
           dunia fcb archive-discover <archive.fat> <candidate-binary> --output <names.txt>
           dunia fcb archive-mutate-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb archive-mutate-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
-          dunia fcb archive-mutate-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb archive-mutate-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <source-payload-sha256> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -297,11 +297,12 @@ internal static class Program
 
         if (args is [
                 "fcb", "archive-mutate-apply", var applyArchivePath, "--confirm-write",
-                var rawApplyEntryIndex, var rawApplyResourceHash, var applySchemaPath,
+                var rawApplyEntryIndex, var rawApplyResourceHash, var rawApplySourceSha256, var applySchemaPath,
                 var rawApplyNodeIndex, var rawApplyFieldIndex, var rawApplyTypeHash,
                 var rawApplyFieldHash, var applyValue]
             && TryParseEntryIndex(rawApplyEntryIndex, out int applyEntryIndex)
             && TryParseResourceHash(rawApplyResourceHash, out ulong expectedApplyResourceHash)
+            && TryParseSha256(rawApplySourceSha256, out string expectedApplySourceSha256)
             && TryParseEntryIndex(rawApplyNodeIndex, out int applyNodeIndex)
             && TryParseEntryIndex(rawApplyFieldIndex, out int applyFieldIndex)
             && TryParseFcbHash(rawApplyTypeHash, out uint expectedApplyTypeHash)
@@ -311,6 +312,7 @@ internal static class Program
                 applyArchivePath,
                 applyEntryIndex,
                 expectedApplyResourceHash,
+                expectedApplySourceSha256,
                 applySchemaPath,
                 applyNodeIndex,
                 applyFieldIndex,
@@ -427,7 +429,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"length={extracted.UncompressedSize}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -457,7 +459,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"root.type-hash={document.Root.TypeHash:X8}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -476,7 +478,7 @@ internal static class Program
             Console.WriteLine($"byte-exact={result.IsByteExact.ToString().ToLowerInvariant()}");
             return result.IsByteExact ? 0 : 4;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -505,7 +507,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"skipped={result.SkippedEntryCount}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -583,7 +585,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"fields={nodes.Sum(node => node.Fields.Count)}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -635,7 +637,7 @@ internal static class Program
             Console.WriteLine($"complete={complete.ToString().ToLowerInvariant()}");
             return complete ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -669,7 +671,7 @@ internal static class Program
             Console.WriteLine($"complete={report.IsComplete.ToString().ToLowerInvariant()}");
             return report.IsComplete ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -761,7 +763,7 @@ internal static class Program
             Console.WriteLine("verified=true");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -831,7 +833,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"unknown.hashes={result.UnknownHashes.Count}"));
             return result.UnknownHashes.Count == 0 ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -858,7 +860,7 @@ internal static class Program
             Console.WriteLine($"complete={complete.ToString().ToLowerInvariant()}");
             return complete ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -901,7 +903,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"unknown.hashes={discovery.UnknownHashes.Count}"));
             return discovery.UnknownHashes.Count == 0 ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -994,7 +996,7 @@ internal static class Program
             Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
             return result.IsVerified ? 0 : 4;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1047,7 +1049,7 @@ internal static class Program
             Console.WriteLine("ready=true");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1092,7 +1094,7 @@ internal static class Program
             Console.WriteLine("verified=true");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1103,6 +1105,7 @@ internal static class Program
         string archivePath,
         int entryIndex,
         ulong expectedResourceHash,
+        string expectedSourcePayloadSha256,
         string schemaPath,
         int nodeIndex,
         int fieldIndex,
@@ -1116,6 +1119,7 @@ internal static class Program
                 ArchivePair.FromIndex(archivePath),
                 entryIndex,
                 expectedResourceHash,
+                expectedSourcePayloadSha256,
                 LoadFcbValueSchema(schemaPath),
                 nodeIndex,
                 fieldIndex,
@@ -1130,6 +1134,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
             Console.WriteLine($"codec={result.Codec}");
             Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
+            Console.WriteLine($"payload.source.sha256={result.SourcePayloadSha256}");
             Console.WriteLine($"payload.sha256={result.PayloadSha256}");
             Console.WriteLine($"no-op={result.NoOp.ToString().ToLowerInvariant()}");
             Console.WriteLine($"semantic.verified={result.SemanticVerified.ToString().ToLowerInvariant()}");
@@ -1145,7 +1150,7 @@ internal static class Program
             Console.WriteLine("verified=true");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1194,7 +1199,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"total={index.Entries.Count}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1215,7 +1220,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"matches={names.Count}"));
             return names.Count > 0 ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1249,7 +1254,7 @@ internal static class Program
             Console.WriteLine($"encrypted={entry.IsEncrypted.ToString().ToLowerInvariant()}");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1286,7 +1291,7 @@ internal static class Program
 
             return report.IsComplete ? 0 : 3;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1315,7 +1320,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1352,7 +1357,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1416,7 +1421,7 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1445,7 +1450,7 @@ internal static class Program
             Console.WriteLine($"verified={result.Verified.ToString().ToLowerInvariant()}");
             return result.Verified ? 0 : 4;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1468,7 +1473,7 @@ internal static class Program
             Console.WriteLine($"byte-exact={result.IsByteExact.ToString().ToLowerInvariant()}");
             return result.IsByteExact ? 0 : 4;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1494,7 +1499,7 @@ internal static class Program
             Console.WriteLine($"valid={result.IsValid.ToString().ToLowerInvariant()}");
             return result.IsValid ? 0 : 4;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1634,6 +1639,15 @@ internal static class Program
         return true;
     }
 
+    private static bool IsExpectedCliError(Exception exception) =>
+        exception is IOException or
+            InvalidDataException or
+            UnauthorizedAccessException or
+            ArgumentException or
+            NotSupportedException or
+            FormatException or
+            OverflowException;
+
     private static bool TryParseEntryIndex(string value, out int index) =>
         int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out index) && index >= 0;
 
@@ -1687,7 +1701,7 @@ internal static class Program
 
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -1740,7 +1754,7 @@ internal static class Program
             Console.WriteLine($"dds.length={result.DdsLength}");
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex) when (IsExpectedCliError(ex))
         {
             Console.Error.WriteLine(ex.Message);
             return 1;

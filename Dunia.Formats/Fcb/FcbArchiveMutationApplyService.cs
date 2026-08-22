@@ -11,6 +11,7 @@ public static class FcbArchiveMutationApplyService
         ArchivePair target,
         int entryIndex,
         ulong expectedResourceNameHash,
+        string expectedSourcePayloadSha256,
         FcbValueSchema schema,
         int nodeIndex,
         int fieldIndex,
@@ -24,6 +25,9 @@ public static class FcbArchiveMutationApplyService
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(value);
         ArgumentException.ThrowIfNullOrWhiteSpace(temporaryRoot);
+        expectedSourcePayloadSha256 = NormalizeSha256(
+            expectedSourcePayloadSha256,
+            nameof(expectedSourcePayloadSha256));
 
         FcbArchiveMutationPlanResult plan = await FcbArchiveMutationPlanService.CreateAsync(
             target,
@@ -36,6 +40,15 @@ public static class FcbArchiveMutationApplyService
             expectedFieldHash,
             value,
             cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(
+                plan.SourcePayloadSha256,
+                expectedSourcePayloadSha256,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(FormattableString.Invariant(
+                $"Source payload SHA-256 mismatch: expected {expectedSourcePayloadSha256}, got {plan.SourcePayloadSha256}."));
+        }
+
         if (plan.NoOp)
         {
             return new(
@@ -44,6 +57,7 @@ public static class FcbArchiveMutationApplyService
                 entryIndex,
                 expectedResourceNameHash,
                 plan.Codec,
+                plan.SourcePayloadSha256,
                 plan.SourcePayloadLength,
                 plan.SourcePayloadSha256,
                 plan.ArchiveEntryCount,
@@ -118,11 +132,23 @@ public static class FcbArchiveMutationApplyService
             entryIndex,
             expectedResourceNameHash,
             dryRun.Codec,
+            plan.SourcePayloadSha256,
             mutation.Length,
             mutationHash,
             apply.Build.Index.Entries.Count,
             false,
             semanticVerified);
+    }
+
+    private static string NormalizeSha256(string value, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, paramName);
+        if (value.Length != SHA256.HashSizeInBytes * 2 || value.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException("SHA-256 must contain exactly 64 hexadecimal digits.", paramName);
+        }
+
+        return value.ToUpperInvariant();
     }
 
     private static async Task ValidatePublishedAsync(
