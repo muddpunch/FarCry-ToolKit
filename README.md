@@ -75,10 +75,11 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | FAT v10 entry parser | Implemented and validated against all 16 local FC5 indexes |
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
 | Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
+| Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
-| FAT/DAT extraction and rebuilding | Not implemented |
+| FAT/DAT extraction and rebuilding | Safe rebuild-to-new-pair implemented; in-place apply disabled |
 | FCB parser and writer | Not implemented |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
@@ -125,6 +126,7 @@ Warnings are treated as errors.
 - `FatV10IndexReader` decodes hashes, sizes, offsets, encryption flags, and LZ4/none metadata with paired-DAT bounds checks.
 - `FatV10IndexWriter` validates packed-field limits and serializes the confirmed FAT v10 envelope and entries.
 - `FatV10ArchivePatchBuilder` preserves the original DAT byte-for-byte, appends verified replacements, and rewrites only affected FAT metadata into separate outputs.
+- `FatV10ArchivePatchFileBuilder` durably writes, reparses, and publishes a new archive pair without modifying the source pair or overwriting existing outputs.
 - `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
@@ -147,6 +149,12 @@ Extract one entry by its zero-based index. Existing output files are never overw
 
 ```powershell
 dotnet run --project Dunia.Cli -- get "D:\Games\Far Cry 5\data_final\pc\common.fat" 0 "entry-0.bin"
+```
+
+Build a separate archive pair with one or more uncompressed replacements. Source and existing output files are never modified:
+
+```powershell
+dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
 ```
 
 Example output shape:

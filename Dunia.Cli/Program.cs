@@ -2,6 +2,7 @@ using System.Globalization;
 using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
+using Dunia.Formats.Changes;
 using Dunia.Formats.Hashing;
 using Dunia.Formats.Textures;
 
@@ -34,6 +35,7 @@ internal static class Program
           dunia list <archive.fat> [--limit N] [--names paths.txt]
           dunia entry <archive.fat> <entry-index> [--names paths.txt]
           dunia get <archive.fat> <entry-index> <output-file>
+          dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
 
         Hash operations:
           dunia hash compute <resource-path>
@@ -126,6 +128,11 @@ internal static class Program
         if (args is ["hash", "audit", var auditFatPath, var auditNamesPath])
         {
             return AuditNames(auditFatPath, auditNamesPath);
+        }
+
+        if (args.Length >= 5 && args[0] == "rebuild" && (args.Length - 3) % 2 == 0)
+        {
+            return await RebuildAsync(args).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -319,6 +326,51 @@ internal static class Program
             }
 
             return report.IsComplete ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> RebuildAsync(string[] args)
+    {
+        try
+        {
+            var replacementPaths = new Dictionary<int, string>();
+            for (int i = 3; i < args.Length; i += 2)
+            {
+                if (!TryParseEntryIndex(args[i], out int index))
+                {
+                    throw new ArgumentException($"Invalid replacement entry index: {args[i]}");
+                }
+
+                if (!replacementPaths.TryAdd(index, args[i + 1]))
+                {
+                    throw new ArgumentException($"Duplicate replacement entry index: {index}");
+                }
+            }
+
+            string stagingRoot = Path.Combine(Path.GetTempPath(), "DuniaToolkit");
+            using var store = new ReplacementStagingStore(stagingRoot);
+            var replacements = new Dictionary<int, StagedReplacement>();
+            foreach ((int index, string path) in replacementPaths)
+            {
+                replacements.Add(index, await store.StageAsync(path).ConfigureAwait(false));
+            }
+
+            FatV10ArchivePatchFileBuildResult result = await FatV10ArchivePatchFileBuilder.BuildAsync(
+                ArchivePair.FromIndex(args[1]),
+                ArchivePair.FromIndex(args[2]),
+                replacements,
+                store).ConfigureAwait(false);
+            Console.WriteLine($"fat={result.OutputPair.FatPath}");
+            Console.WriteLine($"dat={result.OutputPair.DatPath}");
+            Console.WriteLine(FormattableString.Invariant($"entries={result.Build.Index.Entries.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"replacements={result.Build.ReplacementCount}"));
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
