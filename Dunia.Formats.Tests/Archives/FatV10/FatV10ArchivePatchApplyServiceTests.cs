@@ -265,6 +265,32 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SourceValidationFailureStopsBeforeBuildAndBackup()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair pair = CreatePair([1, 2, 3]);
+        byte[] originalFat = await File.ReadAllBytesAsync(pair.FatPath, token);
+        byte[] originalDat = await File.ReadAllBytesAsync(pair.DatPath, token);
+        using var store = new ReplacementStagingStore(directory);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            FatV10ArchivePatchApplyService.ApplyAsync(
+                pair,
+                new Dictionary<int, StagedReplacement>(),
+                store,
+                static (_, _) => throw new InvalidDataException("Source validation failed."),
+                static (_, _) => Task.CompletedTask,
+                token));
+
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(pair.FatPath, token));
+        Assert.Equal(originalDat, await File.ReadAllBytesAsync(pair.DatPath, token));
+        Assert.False(File.Exists(pair.FatPath + ".original"));
+        Assert.False(File.Exists(pair.DatPath + ".original"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.apply-*.fat"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.apply-*.dat"));
+    }
+
+    [Fact]
     public async Task PublicationValidationFailureRollsBackBothOriginalFiles()
     {
         CancellationToken token = TestContext.Current.CancellationToken;

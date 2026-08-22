@@ -24,11 +24,27 @@ public static class FatV10ArchivePatchApplyService
         IReadOnlyDictionary<int, StagedReplacement> replacements,
         ReplacementStagingStore stagingStore,
         Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
+        CancellationToken cancellationToken = default) =>
+        await ApplyAsync(
+            target,
+            replacements,
+            stagingStore,
+            static (_, _) => Task.CompletedTask,
+            validatePublishedAsync,
+            cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<FatV10ArchivePatchApplyResult> ApplyAsync(
+        ArchivePair target,
+        IReadOnlyDictionary<int, StagedReplacement> replacements,
+        ReplacementStagingStore stagingStore,
+        Func<ArchivePair, CancellationToken, Task> validateSourceAsync,
+        Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(replacements);
         ArgumentNullException.ThrowIfNull(stagingStore);
+        ArgumentNullException.ThrowIfNull(validateSourceAsync);
         ArgumentNullException.ThrowIfNull(validatePublishedAsync);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -53,6 +69,7 @@ public static class FatV10ArchivePatchApplyService
                     fatLock,
                     datLock,
                     cancellationToken).ConfigureAwait(false);
+                await validateSourceAsync(target, cancellationToken).ConfigureAwait(false);
                 fileBuild = await FatV10ArchivePatchFileBuilder.BuildAsync(
                     target,
                     builtPair,

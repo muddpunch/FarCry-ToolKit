@@ -6,17 +6,33 @@ public static class FatV10ArchivePatchFileBuilder
 {
     private const int BufferSize = 1024 * 1024;
 
-    public static async Task<FatV10ArchivePatchFileBuildResult> BuildAsync(
+    public static Task<FatV10ArchivePatchFileBuildResult> BuildAsync(
         ArchivePair source,
         ArchivePair destination,
         IReadOnlyDictionary<int, StagedReplacement> replacements,
         ReplacementStagingStore stagingStore,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        BuildAsync(
+            source,
+            destination,
+            replacements,
+            stagingStore,
+            static (_, _) => Task.CompletedTask,
+            cancellationToken);
+
+    internal static async Task<FatV10ArchivePatchFileBuildResult> BuildAsync(
+        ArchivePair source,
+        ArchivePair destination,
+        IReadOnlyDictionary<int, StagedReplacement> replacements,
+        ReplacementStagingStore stagingStore,
+        Func<ArchivePair, CancellationToken, Task> validateSourceAsync,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(replacements);
         ArgumentNullException.ThrowIfNull(stagingStore);
+        ArgumentNullException.ThrowIfNull(validateSourceAsync);
         cancellationToken.ThrowIfCancellationRequested();
         ValidatePaths(source, destination);
 
@@ -33,6 +49,7 @@ public static class FatV10ArchivePatchFileBuilder
             await using (FileStream fatOutput = OpenOutput(temporaryFatPath))
             await using (FileStream datOutput = OpenOutput(temporaryDatPath))
             {
+                await validateSourceAsync(source, cancellationToken).ConfigureAwait(false);
                 build = await FatV10ArchivePatchBuilder.BuildAsync(
                     fatInput,
                     datInput,

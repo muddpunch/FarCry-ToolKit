@@ -170,10 +170,16 @@ Transactional apply now opens both source files with read sharing only, fingerpr
 
 A synthetic race regression changes the source DAT after construction and before publication. Apply rejects the stale build, restores the changed live pair byte-for-byte, leaves the rebuilt pair unpublished, and removes both rollback files.
 
-## Next gate
-
-Connect the atomic multi-field FCB graph mutator to archive planning, dry-run, and confirmed publication.
-
 ## Atomic multi-field graph mutation — 2026-08-23
 
 `FcbValueMutator.ReplaceInlineFields` validates every target and encoded value before cloning, applies all replacements to one graph clone, propagates changes through backward references, then performs one serialize/reparse/schema-coverage verification cycle. Duplicate targets and referenced-field targets are rejected before an output document is returned; the existing single-field API delegates to the same transaction.
+
+## Atomic multi-field archive mutation — 2026-08-23
+
+`mutation-plan-batch`, `archive-mutate-batch-dry-run`, `archive-mutate-batch-copy`, and `archive-mutate-batch-apply` consume tab-separated node/field identity records. The planner extracts and parses the selected FCB once, validates every identity and codec, applies all requested values to one clone, and emits one planned payload hash. Dry-run rebuilds one temporary archive pair and verifies the payload, untouched FAT entries, and original DAT prefix.
+
+Batch copy publishes only to a nonexistent pair and repeats the plan while both source archive files are read-locked. Confirmed batch apply additionally requires the planned source payload SHA-256, uses the source-pair fingerprinted transaction, validates every published field plus complete schema coverage and byte-exact FCB round-trip, and retains rollback files until all semantic checks pass. A two-field synthetic archive passes the complete plan/dry-run/copy/backup/apply path.
+
+## Next gate
+
+Add a manifest generator that selects fields by stable type/field identities instead of requiring users to hand-author node and field indexes.

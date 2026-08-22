@@ -45,6 +45,7 @@ internal static class Program
           dunia fcb schema-audit <input.fcb> <schema.txt>
           dunia fcb mutate <input.fcb> <output.fcb> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb mutation-plan <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb mutation-plan-batch <archive.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
           dunia fcb archive-discover <archive.fat> <candidate-binary>
@@ -52,6 +53,9 @@ internal static class Program
           dunia fcb archive-mutate-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb archive-mutate-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb archive-mutate-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <source-payload-sha256> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb archive-mutate-batch-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
+          dunia fcb archive-mutate-batch-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
+          dunia fcb archive-mutate-batch-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <source-payload-sha256> <schema.txt> <mutations.tsv>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -271,6 +275,51 @@ internal static class Program
         }
 
         if (args is [
+                "fcb", "mutation-plan-batch", var batchPlanArchivePath, var rawBatchPlanEntryIndex,
+                var rawBatchPlanResourceHash, var batchPlanSchemaPath, var batchPlanMutationsPath]
+            && TryParseEntryIndex(rawBatchPlanEntryIndex, out int batchPlanEntryIndex)
+            && TryParseResourceHash(rawBatchPlanResourceHash, out ulong expectedBatchPlanResourceHash))
+        {
+            return await PlanFcbArchiveBatchMutationAsync(
+                batchPlanArchivePath,
+                batchPlanEntryIndex,
+                expectedBatchPlanResourceHash,
+                batchPlanSchemaPath,
+                batchPlanMutationsPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-batch-dry-run", var batchDryRunArchivePath,
+                var rawBatchDryRunEntryIndex, var rawBatchDryRunResourceHash,
+                var batchDryRunSchemaPath, var batchDryRunMutationsPath]
+            && TryParseEntryIndex(rawBatchDryRunEntryIndex, out int batchDryRunEntryIndex)
+            && TryParseResourceHash(rawBatchDryRunResourceHash, out ulong expectedBatchDryRunResourceHash))
+        {
+            return await DryRunFcbArchiveBatchMutationAsync(
+                batchDryRunArchivePath,
+                batchDryRunEntryIndex,
+                expectedBatchDryRunResourceHash,
+                batchDryRunSchemaPath,
+                batchDryRunMutationsPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-batch-copy", var batchCopySourcePath,
+                var batchCopyOutputPath, var rawBatchCopyEntryIndex, var rawBatchCopyResourceHash,
+                var batchCopySchemaPath, var batchCopyMutationsPath]
+            && TryParseEntryIndex(rawBatchCopyEntryIndex, out int batchCopyEntryIndex)
+            && TryParseResourceHash(rawBatchCopyResourceHash, out ulong expectedBatchCopyResourceHash))
+        {
+            return await CreateFcbArchiveBatchMutationCopyAsync(
+                batchCopySourcePath,
+                batchCopyOutputPath,
+                batchCopyEntryIndex,
+                expectedBatchCopyResourceHash,
+                batchCopySchemaPath,
+                batchCopyMutationsPath).ConfigureAwait(false);
+        }
+
+        if (args is [
                 "fcb", "archive-mutate-copy", var copySourcePath, var copyOutputPath,
                 var rawCopyEntryIndex, var rawCopyResourceHash, var copySchemaPath,
                 var rawCopyNodeIndex, var rawCopyFieldIndex, var rawCopyTypeHash,
@@ -319,6 +368,23 @@ internal static class Program
                 expectedApplyTypeHash,
                 expectedApplyFieldHash,
                 applyValue).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-batch-apply", var batchApplyArchivePath, "--confirm-write",
+                var rawBatchApplyEntryIndex, var rawBatchApplyResourceHash,
+                var rawBatchApplySourceSha256, var batchApplySchemaPath, var batchApplyMutationsPath]
+            && TryParseEntryIndex(rawBatchApplyEntryIndex, out int batchApplyEntryIndex)
+            && TryParseResourceHash(rawBatchApplyResourceHash, out ulong expectedBatchApplyResourceHash)
+            && TryParseSha256(rawBatchApplySourceSha256, out string expectedBatchApplySourceSha256))
+        {
+            return await ApplyFcbArchiveBatchMutationAsync(
+                batchApplyArchivePath,
+                batchApplyEntryIndex,
+                expectedBatchApplyResourceHash,
+                expectedBatchApplySourceSha256,
+                batchApplySchemaPath,
+                batchApplyMutationsPath).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -1056,6 +1122,102 @@ internal static class Program
         }
     }
 
+    private static async Task<int> PlanFcbArchiveBatchMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        string mutationsPath)
+    {
+        try
+        {
+            FcbArchiveBatchMutationPlanResult result = await
+                FcbArchiveBatchMutationPlanService.CreateAsync(
+                    ArchivePair.FromIndex(archivePath),
+                    entryIndex,
+                    expectedResourceHash,
+                    LoadFcbValueSchema(schemaPath),
+                    LoadFcbArchiveMutations(mutationsPath)).ConfigureAwait(false);
+            Console.WriteLine("read-only=true");
+            Console.WriteLine("source.modified=false");
+            WriteFcbArchiveBatchPlan(result);
+            Console.WriteLine("ready=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> DryRunFcbArchiveBatchMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        string mutationsPath)
+    {
+        try
+        {
+            FcbArchiveBatchMutationDryRunResult result = await
+                FcbArchiveBatchMutationDryRunService.RunAsync(
+                    ArchivePair.FromIndex(archivePath),
+                    entryIndex,
+                    expectedResourceHash,
+                    LoadFcbValueSchema(schemaPath),
+                    LoadFcbArchiveMutations(mutationsPath),
+                    Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("dry-run=true");
+            Console.WriteLine("source.modified=false");
+            WriteFcbArchiveBatchPlan(result.Plan);
+            Console.WriteLine($"payload.exact={result.PayloadExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"entries.untouched={result.UntouchedEntriesExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"dat.prefix.exact={result.SourceDataPrefixExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
+            return result.IsVerified ? 0 : 4;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> CreateFcbArchiveBatchMutationCopyAsync(
+        string sourcePath,
+        string outputPath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        string mutationsPath)
+    {
+        try
+        {
+            FcbArchiveBatchMutationCopyResult result = await
+                FcbArchiveBatchMutationCopyService.CreateAsync(
+                    ArchivePair.FromIndex(sourcePath),
+                    ArchivePair.FromIndex(outputPath),
+                    entryIndex,
+                    expectedResourceHash,
+                    LoadFcbValueSchema(schemaPath),
+                    LoadFcbArchiveMutations(mutationsPath),
+                    Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine($"fat.output={result.OutputPair.FatPath}");
+            Console.WriteLine($"dat.output={result.OutputPair.DatPath}");
+            WriteFcbArchiveBatchPlan(result.Plan);
+            Console.WriteLine($"payload.exact={result.PayloadExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static async Task<int> CreateFcbArchiveMutationCopyAsync(
         string sourcePath,
         string outputPath,
@@ -1155,6 +1317,77 @@ internal static class Program
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
+    }
+
+    private static async Task<int> ApplyFcbArchiveBatchMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string expectedSourcePayloadSha256,
+        string schemaPath,
+        string mutationsPath)
+    {
+        try
+        {
+            FcbArchiveBatchMutationApplyResult result = await
+                FcbArchiveBatchMutationApplyService.ApplyAsync(
+                    ArchivePair.FromIndex(archivePath),
+                    entryIndex,
+                    expectedResourceHash,
+                    expectedSourcePayloadSha256,
+                    LoadFcbValueSchema(schemaPath),
+                    LoadFcbArchiveMutations(mutationsPath),
+                    Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine($"applied={(!result.NoOp).ToString().ToLowerInvariant()}");
+            Console.WriteLine($"fat.target={result.TargetPair.FatPath}");
+            Console.WriteLine($"dat.target={result.TargetPair.DatPath}");
+            WriteFcbArchiveBatchPlan(result.Plan);
+            Console.WriteLine($"semantic.verified={result.SemanticVerified.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"backup.created={(result.Backup?.CreatedAny ?? false).ToString().ToLowerInvariant()}");
+            if (result.Backup is not null)
+            {
+                Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+                Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
+                Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+                Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
+            }
+
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static void WriteFcbArchiveBatchPlan(FcbArchiveBatchMutationPlanResult plan)
+    {
+        Console.WriteLine(FormattableString.Invariant($"entry={plan.EntryIndex}"));
+        Console.WriteLine(FormattableString.Invariant($"resource.hash={plan.ResourceNameHash:X16}"));
+        Console.WriteLine(FormattableString.Invariant($"archive.entries={plan.ArchiveEntryCount}"));
+        Console.WriteLine(FormattableString.Invariant($"mutations={plan.Mutations.Count}"));
+        for (int i = 0; i < plan.Mutations.Count; i++)
+        {
+            FcbArchivePlannedFieldMutation mutation = plan.Mutations[i];
+            Console.WriteLine(FormattableString.Invariant($"mutation.{i}.node={mutation.NodeIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"mutation.{i}.field={mutation.FieldIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"mutation.{i}.type.hash={mutation.TypeHash:X8}"));
+            Console.WriteLine(FormattableString.Invariant($"mutation.{i}.field.hash={mutation.FieldHash:X8}"));
+            Console.WriteLine($"mutation.{i}.codec={mutation.Codec}");
+            Console.WriteLine($"mutation.{i}.current.value={mutation.CurrentValue}");
+            Console.WriteLine($"mutation.{i}.requested.value={mutation.RequestedValue}");
+            Console.WriteLine($"mutation.{i}.requested.encoded={mutation.RequestedEncodedHex}");
+        }
+
+        Console.WriteLine(FormattableString.Invariant($"schema.fields={plan.SchemaFieldCount}"));
+        Console.WriteLine(FormattableString.Invariant($"schema.resolved={plan.SchemaResolvedCount}"));
+        Console.WriteLine(FormattableString.Invariant($"payload.source.length={plan.SourcePayloadLength}"));
+        Console.WriteLine($"payload.source.sha256={plan.SourcePayloadSha256}");
+        Console.WriteLine(FormattableString.Invariant($"payload.planned.length={plan.PlannedPayloadLength}"));
+        Console.WriteLine($"payload.planned.sha256={plan.PlannedPayloadSha256}");
+        Console.WriteLine($"no-op={plan.NoOp.ToString().ToLowerInvariant()}");
     }
 
     private static void WriteFcbArchiveSummary(FcbArchiveAnalysisResult analysis)
@@ -1586,6 +1819,41 @@ internal static class Program
     {
         using StreamReader input = File.OpenText(schemaPath);
         return FcbValueSchema.Load(input);
+    }
+
+    private static List<FcbArchiveFieldMutation> LoadFcbArchiveMutations(string path)
+    {
+        var mutations = new List<FcbArchiveFieldMutation>();
+        int lineNumber = 0;
+        foreach (string line in File.ReadLines(path))
+        {
+            lineNumber++;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed[0] is '#' or ';')
+            {
+                continue;
+            }
+
+            string[] columns = line.Split('\t');
+            if (columns.Length != 5 ||
+                !TryParseEntryIndex(columns[0].Trim(), out int nodeIndex) ||
+                !TryParseEntryIndex(columns[1].Trim(), out int fieldIndex) ||
+                !TryParseFcbHash(columns[2].Trim(), out uint typeHash) ||
+                !TryParseFcbHash(columns[3].Trim(), out uint fieldHash))
+            {
+                throw new InvalidDataException(
+                    $"Invalid mutation record at line {lineNumber}; expected NODE<TAB>FIELD<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE.");
+            }
+
+            mutations.Add(new(nodeIndex, fieldIndex, typeHash, fieldHash, columns[4]));
+        }
+
+        if (mutations.Count == 0)
+        {
+            throw new InvalidDataException("Mutation file contains no records.");
+        }
+
+        return mutations;
     }
 
     private static bool TryParseHash(string value, out ulong hash)

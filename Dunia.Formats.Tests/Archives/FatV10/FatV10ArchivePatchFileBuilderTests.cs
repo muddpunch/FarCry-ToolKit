@@ -67,6 +67,34 @@ public sealed class FatV10ArchivePatchFileBuilderTests : IDisposable
         Assert.False(File.Exists(destination.DatPath));
     }
 
+    [Fact]
+    public async Task SourceValidationFailureDoesNotPublishDestination()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair source = CreateSourcePair([1, 2, 3]);
+        byte[] sourceFat = await File.ReadAllBytesAsync(source.FatPath, token);
+        byte[] sourceDat = await File.ReadAllBytesAsync(source.DatPath, token);
+        var destination = new ArchivePair(
+            Path.Combine(directory, "output.fat"),
+            Path.Combine(directory, "output.dat"));
+        using var store = new ReplacementStagingStore(directory);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            FatV10ArchivePatchFileBuilder.BuildAsync(
+                source,
+                destination,
+                new Dictionary<int, StagedReplacement>(),
+                store,
+                static (_, _) => throw new InvalidDataException("Source validation failed."),
+                token));
+
+        Assert.Equal(sourceFat, await File.ReadAllBytesAsync(source.FatPath, token));
+        Assert.Equal(sourceDat, await File.ReadAllBytesAsync(source.DatPath, token));
+        Assert.False(File.Exists(destination.FatPath));
+        Assert.False(File.Exists(destination.DatPath));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateSourcePair(byte[] data)

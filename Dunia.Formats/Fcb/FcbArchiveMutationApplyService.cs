@@ -107,6 +107,32 @@ public static class FcbArchiveMutationApplyService
             target,
             new Dictionary<int, StagedReplacement> { [entryIndex] = replacement },
             store,
+            async (lockedSource, token) =>
+            {
+                FcbArchiveMutationPlanResult lockedPlan = await FcbArchiveMutationPlanService.CreateAsync(
+                    lockedSource,
+                    entryIndex,
+                    expectedResourceNameHash,
+                    schema,
+                    nodeIndex,
+                    fieldIndex,
+                    expectedTypeHash,
+                    expectedFieldHash,
+                    value,
+                    token).ConfigureAwait(false);
+                if (!string.Equals(
+                        lockedPlan.SourcePayloadSha256,
+                        plan.SourcePayloadSha256,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        lockedPlan.PlannedPayloadSha256,
+                        mutationHash,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        "Locked FCB mutation differs from the planned and verified payload.");
+                }
+            },
             async (published, token) =>
             {
                 await ValidatePublishedAsync(

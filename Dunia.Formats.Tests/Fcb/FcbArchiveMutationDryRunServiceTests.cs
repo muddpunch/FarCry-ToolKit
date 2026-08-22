@@ -295,6 +295,100 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.Equal(result.SourcePayloadSha256, result.PlannedPayloadSha256);
     }
 
+    [Fact]
+    public async Task BatchApplyPlansDryRunsAndPublishesAllFieldsAtomically()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFieldsFcb(true, false);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair target = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        using var schemaInput = new StringReader(
+            "00000010 00000020 Boolean\n00000010 00000021 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+        FcbArchiveFieldMutation[] mutations =
+        [
+            new(0, 0, 0x10, 0x20, "false"),
+            new(0, 1, 0x10, 0x21, "true"),
+        ];
+
+        FcbArchiveBatchMutationPlanResult plan = await
+            FcbArchiveBatchMutationPlanService.CreateAsync(
+                target,
+                0,
+                0x0123456789ABCDEF,
+                schema,
+                mutations,
+                token);
+
+        Assert.Equal(2, plan.Mutations.Count);
+        Assert.False(plan.NoOp);
+        Assert.Equal("true", plan.Mutations[0].CurrentValue);
+        Assert.Equal("false", plan.Mutations[0].RequestedValue);
+        Assert.Equal("false", plan.Mutations[1].CurrentValue);
+        Assert.Equal("true", plan.Mutations[1].RequestedValue);
+
+        var copyPair = new ArchivePair(
+            Path.Combine(directory, "batch-copy.fat"),
+            Path.Combine(directory, "batch-copy.dat"));
+        FcbArchiveBatchMutationCopyResult copy = await
+            FcbArchiveBatchMutationCopyService.CreateAsync(
+                target,
+                copyPair,
+                0,
+                0x0123456789ABCDEF,
+                schema,
+                mutations,
+                directory,
+                token);
+        Assert.True(copy.PayloadExact);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath, token));
+        using (FileStream copyFat = File.OpenRead(copyPair.FatPath))
+        {
+            FatV10Entry copyEntry = FatV10IndexReader.Read(
+                copyFat,
+                new FileInfo(copyPair.DatPath).Length).Entries[0];
+            await using FileStream copyData = File.OpenRead(copyPair.DatPath);
+            await using var copyPayload = new MemoryStream();
+            await FatV10PayloadExtractor.ExtractAsync(copyData, copyEntry, copyPayload, token);
+            copyPayload.Position = 0;
+            FcbDocument copied = FcbReader.Read(copyPayload);
+            Assert.Equal<byte>([0], copied.Root.Fields[0].Data.ToArray());
+            Assert.Equal<byte>([1], copied.Root.Fields[1].Data.ToArray());
+        }
+
+        FcbArchiveBatchMutationApplyResult result = await
+            FcbArchiveBatchMutationApplyService.ApplyAsync(
+                target,
+                0,
+                0x0123456789ABCDEF,
+                plan.SourcePayloadSha256,
+                schema,
+                mutations,
+                directory,
+                token);
+
+        Assert.True(result.SemanticVerified);
+        Assert.False(result.NoOp);
+        Assert.True(Assert.IsType<ArchivePairBackupResult>(result.Backup).CreatedAny);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath + ".original", token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath + ".original", token));
+        using FileStream fat = File.OpenRead(target.FatPath);
+        FatV10Entry outputEntry = FatV10IndexReader.Read(
+            fat,
+            new FileInfo(target.DatPath).Length).Entries[0];
+        await using FileStream data = File.OpenRead(target.DatPath);
+        await using var payload = new MemoryStream();
+        await FatV10PayloadExtractor.ExtractAsync(data, outputEntry, payload, token);
+        payload.Position = 0;
+        FcbDocument published = FcbReader.Read(payload);
+        Assert.Equal<byte>([0], published.Root.Fields[0].Data.ToArray());
+        Assert.Equal<byte>([1], published.Root.Fields[1].Data.ToArray());
+        Assert.Empty(Directory.EnumerateDirectories(directory, "fcb-batch-dryrun-*"));
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateArchive(int fcbLength, byte[] data)
@@ -324,6 +418,25 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         WriteUInt32(body, 0x20);
         body.WriteByte(1);
         body.WriteByte(value ? (byte)1 : (byte)0);
+        byte[] data = new byte[FcbReader.HeaderSize + body.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(data, FcbReader.Signature);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(4), FcbReader.Version);
+        body.ToArray().CopyTo(data, FcbReader.HeaderSize);
+        return data;
+    }
+
+    private static byte[] CreateBooleanFieldsFcb(bool first, bool second)
+    {
+        using var body = new MemoryStream();
+        body.WriteByte(0);
+        WriteUInt32(body, 0x10);
+        body.WriteByte(2);
+        WriteUInt32(body, 0x20);
+        body.WriteByte(1);
+        body.WriteByte(first ? (byte)1 : (byte)0);
+        WriteUInt32(body, 0x21);
+        body.WriteByte(1);
+        body.WriteByte(second ? (byte)1 : (byte)0);
         byte[] data = new byte[FcbReader.HeaderSize + body.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(data, FcbReader.Signature);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(4), FcbReader.Version);

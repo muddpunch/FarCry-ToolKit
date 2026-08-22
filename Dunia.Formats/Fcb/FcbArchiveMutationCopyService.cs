@@ -73,6 +73,25 @@ public static class FcbArchiveMutationCopyService
                 destination,
                 new Dictionary<int, StagedReplacement> { [entryIndex] = replacement },
                 store,
+                async (lockedSource, token) =>
+                {
+                    byte[] lockedMutation = await CreateMutationAsync(
+                        lockedSource,
+                        entryIndex,
+                        expectedResourceNameHash,
+                        schema,
+                        nodeIndex,
+                        fieldIndex,
+                        expectedTypeHash,
+                        expectedFieldHash,
+                        value,
+                        token).ConfigureAwait(false);
+                    if (!lockedMutation.AsSpan().SequenceEqual(mutation))
+                    {
+                        throw new InvalidDataException(
+                            "Locked FCB mutation differs from the verified copy payload.");
+                    }
+                },
                 cancellationToken).ConfigureAwait(false);
             published = true;
 
