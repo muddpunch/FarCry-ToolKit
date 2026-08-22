@@ -1,4 +1,3 @@
 namespace Dunia.Formats.Archives;
 
-public sealed record ArchiveBackupResult(string BackupPath, bool Created);
-
+public sealed record ArchiveBackupResult(string BackupPath, bool Created, string Sha256);

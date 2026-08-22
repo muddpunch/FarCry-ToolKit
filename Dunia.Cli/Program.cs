@@ -36,6 +36,7 @@ internal static class Program
           dunia entry <archive.fat> <entry-index> [--names paths.txt]
           dunia get <archive.fat> <entry-index> <output-file>
           dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
+          dunia apply <archive.fat> --dry-run <entry-index> <replacement-file> [...]
 
         Hash operations:
           dunia hash compute <resource-path>
@@ -133,6 +134,11 @@ internal static class Program
         if (args.Length >= 5 && args[0] == "rebuild" && (args.Length - 3) % 2 == 0)
         {
             return await RebuildAsync(args).ConfigureAwait(false);
+        }
+
+        if (args.Length >= 5 && args[0] == "apply" && args[2] == "--dry-run" && (args.Length - 3) % 2 == 0)
+        {
+            return await ApplyDryRunAsync(args).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -338,27 +344,11 @@ internal static class Program
     {
         try
         {
-            var replacementPaths = new Dictionary<int, string>();
-            for (int i = 3; i < args.Length; i += 2)
-            {
-                if (!TryParseEntryIndex(args[i], out int index))
-                {
-                    throw new ArgumentException($"Invalid replacement entry index: {args[i]}");
-                }
-
-                if (!replacementPaths.TryAdd(index, args[i + 1]))
-                {
-                    throw new ArgumentException($"Duplicate replacement entry index: {index}");
-                }
-            }
-
             string stagingRoot = Path.Combine(Path.GetTempPath(), "DuniaToolkit");
             using var store = new ReplacementStagingStore(stagingRoot);
-            var replacements = new Dictionary<int, StagedReplacement>();
-            foreach ((int index, string path) in replacementPaths)
-            {
-                replacements.Add(index, await store.StageAsync(path).ConfigureAwait(false));
-            }
+            Dictionary<int, StagedReplacement> replacements = await StageReplacementsAsync(
+                ParseReplacementPaths(args, 3),
+                store).ConfigureAwait(false);
 
             FatV10ArchivePatchFileBuildResult result = await FatV10ArchivePatchFileBuilder.BuildAsync(
                 ArchivePair.FromIndex(args[1]),
@@ -377,6 +367,82 @@ internal static class Program
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
+    }
+
+    private static async Task<int> ApplyDryRunAsync(string[] args)
+    {
+        string? outputDirectory = null;
+
+        try
+        {
+            string stagingRoot = Path.Combine(Path.GetTempPath(), "DuniaToolkit");
+            using var store = new ReplacementStagingStore(stagingRoot);
+            Dictionary<int, StagedReplacement> replacements = await StageReplacementsAsync(
+                ParseReplacementPaths(args, 3),
+                store).ConfigureAwait(false);
+            outputDirectory = Path.Combine(stagingRoot, $"dryrun-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(outputDirectory);
+            var output = new ArchivePair(
+                Path.Combine(outputDirectory, "verified.fat"),
+                Path.Combine(outputDirectory, "verified.dat"));
+            FatV10ArchivePatchFileBuildResult result = await FatV10ArchivePatchFileBuilder.BuildAsync(
+                ArchivePair.FromIndex(args[1]),
+                output,
+                replacements,
+                store).ConfigureAwait(false);
+
+            Console.WriteLine("dry-run=true");
+            Console.WriteLine("validated=true");
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine(FormattableString.Invariant($"entries={result.Build.Index.Entries.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"replacements={result.Build.ReplacementCount}"));
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (outputDirectory is not null && Directory.Exists(outputDirectory))
+            {
+                Directory.Delete(outputDirectory, true);
+            }
+        }
+    }
+
+    private static Dictionary<int, string> ParseReplacementPaths(string[] args, int startIndex)
+    {
+        var replacements = new Dictionary<int, string>();
+        for (int i = startIndex; i < args.Length; i += 2)
+        {
+            if (!TryParseEntryIndex(args[i], out int index))
+            {
+                throw new ArgumentException($"Invalid replacement entry index: {args[i]}");
+            }
+
+            if (!replacements.TryAdd(index, args[i + 1]))
+            {
+                throw new ArgumentException($"Duplicate replacement entry index: {index}");
+            }
+        }
+
+        return replacements;
+    }
+
+    private static async Task<Dictionary<int, StagedReplacement>> StageReplacementsAsync(
+        IReadOnlyDictionary<int, string> paths,
+        ReplacementStagingStore store)
+    {
+        var replacements = new Dictionary<int, StagedReplacement>();
+        foreach ((int index, string path) in paths)
+        {
+            replacements.Add(index, await store.StageAsync(path).ConfigureAwait(false));
+        }
+
+        return replacements;
     }
 
     private static DuniaNameResolver LoadResolver(string namesPath)

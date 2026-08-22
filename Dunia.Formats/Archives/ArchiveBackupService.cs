@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Security.Cryptography;
+
 namespace Dunia.Formats.Archives;
 
 public static class ArchiveBackupService
@@ -16,24 +19,32 @@ public static class ArchiveBackupService
 
         if (File.Exists(backupPath))
         {
-            return new(backupPath, false);
+            return new(backupPath, false, await ComputeSha256Async(backupPath, cancellationToken).ConfigureAwait(false));
         }
 
         string temporaryPath = $"{backupPath}.{Guid.NewGuid():N}.tmp";
 
         try
         {
-            await CopyToTemporaryFileAsync(sourcePath, temporaryPath, cancellationToken)
+            string sourceSha256 = await CopyToTemporaryFileAsync(sourcePath, temporaryPath, cancellationToken)
                 .ConfigureAwait(false);
+            string backupSha256 = await ComputeSha256Async(temporaryPath, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(sourceSha256, backupSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Archive backup failed SHA-256 verification.");
+            }
 
             try
             {
                 File.Move(temporaryPath, backupPath, false);
-                return new(backupPath, true);
+                return new(backupPath, true, backupSha256);
             }
             catch (IOException) when (File.Exists(backupPath))
             {
-                return new(backupPath, false);
+                return new(
+                    backupPath,
+                    false,
+                    await ComputeSha256Async(backupPath, cancellationToken).ConfigureAwait(false));
             }
         }
         finally
@@ -42,7 +53,7 @@ public static class ArchiveBackupService
         }
     }
 
-    private static async Task CopyToTemporaryFileAsync(
+    private static async Task<string> CopyToTemporaryFileAsync(
         string sourcePath,
         string temporaryPath,
         CancellationToken cancellationToken)
@@ -63,10 +74,44 @@ public static class ArchiveBackupService
             FileShare.None,
             BufferSize,
             options);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        try
+        {
+            while (true)
+            {
+                int read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
 
-        await source.CopyToAsync(target, BufferSize, cancellationToken).ConfigureAwait(false);
+                hash.AppendData(buffer.AsSpan(0, read));
+                await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer, true);
+        }
+
         await target.FlushAsync(cancellationToken).ConfigureAwait(false);
         target.Flush(true);
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static async Task<string> ComputeSha256Async(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using FileStream input = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            BufferSize,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        byte[] hash = await SHA256.HashDataAsync(input, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash);
     }
 }
-

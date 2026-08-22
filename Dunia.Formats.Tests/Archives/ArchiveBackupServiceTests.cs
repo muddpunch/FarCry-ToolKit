@@ -1,4 +1,5 @@
 using Dunia.Formats.Archives;
+using System.Security.Cryptography;
 
 namespace Dunia.Formats.Tests.Archives;
 
@@ -21,6 +22,7 @@ public sealed class ArchiveBackupServiceTests : IDisposable
 
         Assert.True(result.Created);
         Assert.Equal(archivePath + ".original", result.BackupPath);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData([0x00, 0x7F, 0x80, 0xFF])), result.Sha256);
         Assert.Equal(
             await File.ReadAllBytesAsync(archivePath, token),
             await File.ReadAllBytesAsync(result.BackupPath, token));
@@ -39,6 +41,7 @@ public sealed class ArchiveBackupServiceTests : IDisposable
 
         Assert.True(first.Created);
         Assert.False(second.Created);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData([0x01])), second.Sha256);
         Assert.Equal(new byte[] { 0x01 }, backup);
     }
 

@@ -77,6 +77,7 @@ Writes will remain disabled until FAT v10 parsing and rebuilding pass byte-exact
 | Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
 | Transactional in-place Apply service | Implemented and tested; CLI exposure gated on real fixtures |
+| CLI Apply dry-run | Implemented; builds and validates without modifying the source |
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
@@ -118,7 +119,7 @@ Warnings are treated as errors.
 
 ## Implemented library surface
 
-- `ArchiveBackupService` atomically creates one permanent `.original` backup.
+- `ArchiveBackupService` atomically creates one permanent `.original` backup and verifies its SHA-256 before publication.
 - `ArchivePairBackupService` validates and backs up a complete FAT/DAT pair.
 - `PendingChangeSet<TKey, TChange>` provides ordered, thread-safe staging and discard snapshots.
 - `ReplacementStagingStore` snapshots replacement files and verifies their length and SHA-256 before use.
@@ -157,6 +158,7 @@ Build a separate archive pair with one or more uncompressed replacements. Source
 
 ```powershell
 dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
+dotnet run --project Dunia.Cli -- apply "common.fat" --dry-run 12 "replacement.bin"
 ```
 
 Example output shape:
@@ -176,7 +178,7 @@ Extract a DDS payload without overwriting an existing output file:
 dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
 ```
 
-Planned CLI verbs are `entry`, `pack`, `rebuild`, and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+Planned CLI verbs are `pack` and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
 
 Compute a normalized FC5 resource-path CRC64 or resolve one from a local one-path-per-line name list:
 
