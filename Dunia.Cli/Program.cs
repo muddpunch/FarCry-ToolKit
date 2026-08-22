@@ -49,6 +49,7 @@ internal static class Program
           dunia fcb archive-discover <archive.fat> <candidate-binary>
           dunia fcb archive-discover <archive.fat> <candidate-binary> --output <names.txt>
           dunia fcb archive-mutate-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb archive-mutate-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -241,6 +242,31 @@ internal static class Program
                 expectedArchiveTypeHash,
                 expectedArchiveFieldHash,
                 archiveMutationValue).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-copy", var copySourcePath, var copyOutputPath,
+                var rawCopyEntryIndex, var rawCopyResourceHash, var copySchemaPath,
+                var rawCopyNodeIndex, var rawCopyFieldIndex, var rawCopyTypeHash,
+                var rawCopyFieldHash, var copyValue]
+            && TryParseEntryIndex(rawCopyEntryIndex, out int copyEntryIndex)
+            && TryParseResourceHash(rawCopyResourceHash, out ulong expectedCopyResourceHash)
+            && TryParseEntryIndex(rawCopyNodeIndex, out int copyNodeIndex)
+            && TryParseEntryIndex(rawCopyFieldIndex, out int copyFieldIndex)
+            && TryParseFcbHash(rawCopyTypeHash, out uint expectedCopyTypeHash)
+            && TryParseFcbHash(rawCopyFieldHash, out uint expectedCopyFieldHash))
+        {
+            return await CreateFcbArchiveMutationCopyAsync(
+                copySourcePath,
+                copyOutputPath,
+                copyEntryIndex,
+                expectedCopyResourceHash,
+                copySchemaPath,
+                copyNodeIndex,
+                copyFieldIndex,
+                expectedCopyTypeHash,
+                expectedCopyFieldHash,
+                copyValue).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -907,6 +933,51 @@ internal static class Program
             Console.WriteLine($"dat.prefix.exact={result.SourceDataPrefixExact.ToString().ToLowerInvariant()}");
             Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
             return result.IsVerified ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> CreateFcbArchiveMutationCopyAsync(
+        string sourcePath,
+        string outputPath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        int nodeIndex,
+        int fieldIndex,
+        uint expectedTypeHash,
+        uint expectedFieldHash,
+        string value)
+    {
+        try
+        {
+            FcbArchiveMutationCopyResult result = await FcbArchiveMutationCopyService.CreateAsync(
+                ArchivePair.FromIndex(sourcePath),
+                ArchivePair.FromIndex(outputPath),
+                entryIndex,
+                expectedResourceHash,
+                LoadFcbValueSchema(schemaPath),
+                nodeIndex,
+                fieldIndex,
+                expectedTypeHash,
+                expectedFieldHash,
+                value,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine($"fat.output={result.OutputPair.FatPath}");
+            Console.WriteLine($"dat.output={result.OutputPair.DatPath}");
+            Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine($"codec={result.Codec}");
+            Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
+            Console.WriteLine($"payload.sha256={result.PayloadSha256}");
+            Console.WriteLine($"payload.exact={result.PayloadExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine("verified=true");
+            return 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {

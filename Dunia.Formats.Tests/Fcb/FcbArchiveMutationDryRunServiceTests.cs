@@ -47,6 +47,50 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.Empty(Directory.EnumerateDirectories(directory, "fcb-dryrun-*"));
     }
 
+    [Fact]
+    public async Task CreateAsyncPublishesVerifiedCopyWithoutChangingSource()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair source = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(source.FatPath, token);
+        var destination = new ArchivePair(
+            Path.Combine(directory, "mutated.fat"),
+            Path.Combine(directory, "mutated.dat"));
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationCopyResult result = await FcbArchiveMutationCopyService.CreateAsync(
+            source,
+            destination,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "false",
+            directory,
+            token);
+
+        Assert.True(result.PayloadExact);
+        Assert.True(File.Exists(destination.FatPath));
+        Assert.True(File.Exists(destination.DatPath));
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(source.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(source.DatPath, token));
+        using FileStream fat = File.OpenRead(destination.FatPath);
+        FatV10Entry outputEntry = FatV10IndexReader.Read(
+            fat,
+            new FileInfo(destination.DatPath).Length).Entries[0];
+        await using FileStream data = File.OpenRead(destination.DatPath);
+        await using var payload = new MemoryStream();
+        await FatV10PayloadExtractor.ExtractAsync(data, outputEntry, payload, token);
+        payload.Position = 0;
+        Assert.Equal<byte>([0], FcbReader.Read(payload).Root.Fields[0].Data.ToArray());
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateArchive(int fcbLength, byte[] data)

@@ -96,6 +96,7 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | External FCB value schema and coverage gate | Implemented; real entry 93 resolves 6/6 fields |
 | Schema-gated FCB field mutation | Implemented in the format library and atomic write-new CLI |
 | FCB mutation FAT/DAT dry-run | Implemented; validated against real `common.fat` entry 93 |
+| Verified FCB mutation archive copy | Implemented; source remains read-only and destination must be new |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -157,6 +158,7 @@ Warnings are treated as errors.
 - `FcbValueMutator` clones the graph, updates inline values and their references, then requires schema coverage and byte-exact serialize/reparse stability.
 - `FcbValueEncoder` canonically encodes schema-selected scalar, hash, string, and vector values in little-endian form.
 - `FcbArchiveMutationDryRunService` rebuilds a temporary FAT/DAT pair, re-extracts the changed payload, and verifies untouched entries plus the complete source DAT prefix.
+- `FcbArchiveMutationCopyService` requires a successful dry-run, reproduces the same payload hash, publishes a new archive pair, and independently re-extracts the result before success.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
@@ -229,11 +231,13 @@ dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.f
 dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
 dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
+dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 ```
 
 Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
 `fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
 `fcb archive-mutate-dry-run` additionally requires the expected 64-bit resource hash and deletes its rebuilt pair after end-to-end verification.
+`fcb archive-mutate-copy` repeats that verification before publishing a separate FAT/DAT pair and refuses existing destination files.
 
 ## Correctness requirements
 

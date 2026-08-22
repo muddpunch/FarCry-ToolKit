@@ -122,6 +122,12 @@ Real entry 93 was copied and `E7046466:723A4D89` (`SpawnThreadSafe`) was changed
 
 Real `common.fat` entry 93 passed with `payload.exact=true`, `entries.untouched=true`, `dat.prefix.exact=true`, and `source.modified=false`. The rebuilt payload SHA-256 was `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`.
 
+## Verified archive-copy publication — 2026-08-22
+
+`fcb archive-mutate-copy` requires the complete dry-run to succeed, regenerates the mutation and requires the same payload SHA-256, publishes only to a nonexistent FAT/DAT destination, then independently extracts and compares the stored payload. Source files are opened read-only.
+
+A real copy built from `common.fat` entry 93 passed independent extraction, complete 6/6 schema coverage, and byte-exact FCB verification. `SpawnThreadSafe` resolved to `true`; payload SHA-256 remained `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`.
+
 ## Next gate
 
-Add a separately named confirmed-apply command restricted to a copied archive pair. Require expected resource hash, pre-write backups, successful dry-run, post-apply extraction equality, and rollback on any failure. Do not expose direct mutation of the installed game archive yet.
+Perform a manual game-load test using the copied pair. Before exposing in-place FCB apply, extend `FatV10ArchivePatchApplyService` so semantic post-publication validation executes while rollback files still exist.
