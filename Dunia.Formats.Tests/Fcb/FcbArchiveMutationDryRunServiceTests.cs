@@ -389,6 +389,65 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
     }
 
+    [Fact]
+    public async Task MutationManifestProducesAByteExactNoOpBatchTemplate()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFieldsFcb(true, false);
+        ArchivePair source = CreateArchive(fcb.Length, [.. fcb, 0xAA, 0xBB]);
+        using var schemaInput = new StringReader(
+            "00000010 00000020 Boolean\n00000010 00000021 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationManifestResult manifest = await
+            FcbArchiveMutationManifestService.CreateAsync(
+                source,
+                0,
+                0x0123456789ABCDEF,
+                schema,
+                token);
+
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(fcb)), manifest.SourcePayloadSha256);
+        Assert.Equal(2, manifest.Entries.Count);
+        Assert.Equal(0, manifest.ReferencedFieldCount);
+        Assert.Collection(
+            manifest.Entries,
+            first =>
+            {
+                Assert.Equal((0, 0), (first.NodeIndex, first.FieldIndex));
+                Assert.Equal((0x10U, 0x20U), (first.TypeHash, first.FieldHash));
+                Assert.Equal(FcbValueKind.Boolean, first.Codec);
+                Assert.Equal("true", first.Value);
+            },
+            second =>
+            {
+                Assert.Equal((0, 1), (second.NodeIndex, second.FieldIndex));
+                Assert.Equal((0x10U, 0x21U), (second.TypeHash, second.FieldHash));
+                Assert.Equal(FcbValueKind.Boolean, second.Codec);
+                Assert.Equal("false", second.Value);
+            });
+
+        FcbArchiveFieldMutation[] noOpMutations = manifest.Entries
+            .Select(entry => new FcbArchiveFieldMutation(
+                entry.NodeIndex,
+                entry.FieldIndex,
+                entry.TypeHash,
+                entry.FieldHash,
+                entry.Value))
+            .ToArray();
+        FcbArchiveBatchMutationPlanResult plan = await
+            FcbArchiveBatchMutationPlanService.CreateAsync(
+                source,
+                0,
+                0x0123456789ABCDEF,
+                schema,
+                noOpMutations,
+                token);
+
+        Assert.True(plan.NoOp);
+        Assert.Equal(plan.SourcePayloadSha256, plan.PlannedPayloadSha256);
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateArchive(int fcbLength, byte[] data)

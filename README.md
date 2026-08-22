@@ -101,6 +101,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | Confirmed in-place FCB archive mutation | Implemented and game-load validated; requires `--confirm-write` |
 | Read-only FCB mutation plan | Implemented; reports typed values, encoded bytes, hashes, coverage, and no-op state |
 | Atomic multi-field FCB mutation | Implemented for planning, dry-run, and confirmed in-place Apply |
+| FCB mutation template generator | Implemented; emits byte-exact no-op TSV without overwriting outputs |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -165,6 +166,7 @@ Warnings are treated as errors.
 - `FcbArchiveMutationCopyService` requires a successful dry-run, reproduces the same payload hash, publishes a new archive pair, and independently re-extracts the result before success.
 - `FcbArchiveMutationPlanService` predicts the verified payload entirely in memory and reports canonical typed values, complete schema coverage, exact hashes, and semantic no-op state without staging or writes. Confirmed apply short-circuits reported no-ops before dry-run, backup, staging, or rebuild.
 - `FcbArchiveBatchMutationPlanService`, `FcbArchiveBatchMutationDryRunService`, and `FcbArchiveBatchMutationApplyService` validate a tab-separated mutation set, encode and apply all fields in one graph transaction, and publish one semantically verified replacement payload.
+- `FcbArchiveMutationManifestService` projects every independently editable inline field into a byte-exact no-op template with source payload SHA-256; referenced fields are counted and excluded.
 - `FatV10ArchivePatchApplyService` re-extracts and hashes every published replacement, then executes optional semantic validation while rollback files still exist; validation failures restore both original archive files.
 - `FatV10ArchiveRestoreService` validates immutable `.original` hashes, stages and validates the backup pair, then restores both files transactionally without deleting the backups.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
@@ -240,6 +242,7 @@ dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.f
 dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
 dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb mutation-plan "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
+dotnet run --project Dunia.Cli -- fcb mutation-template "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
 dotnet run --project Dunia.Cli -- fcb mutation-plan-batch "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
 dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
@@ -250,7 +253,7 @@ dotnet run --project Dunia.Cli -- fcb archive-mutate-batch-apply "common.fat" --
 ```
 
 Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
-Batch mutation records use `NODE_INDEX<TAB>FIELD_INDEX<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE`; blank lines and lines beginning with `#` or `;` are ignored.
+Batch mutation records use `NODE_INDEX<TAB>FIELD_INDEX<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE`; blank lines and lines beginning with `#` or `;` are ignored. Template values escape backslash, tab, CR, and LF as `\\`, `\t`, `\r`, and `\n`.
 `fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
 `fcb archive-mutate-dry-run` additionally requires the expected 64-bit resource hash and deletes its rebuilt pair after end-to-end verification.
 `fcb archive-mutate-copy` repeats that verification before publishing a separate FAT/DAT pair and refuses existing destination files.

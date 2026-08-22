@@ -180,6 +180,18 @@ A synthetic race regression changes the source DAT after construction and before
 
 Batch copy publishes only to a nonexistent pair and repeats the plan while both source archive files are read-locked. Confirmed batch apply additionally requires the planned source payload SHA-256, uses the source-pair fingerprinted transaction, validates every published field plus complete schema coverage and byte-exact FCB round-trip, and retains rollback files until all semantic checks pass. A two-field synthetic archive passes the complete plan/dry-run/copy/backup/apply path.
 
+## Mutation template generation — 2026-08-23
+
+`mutation-template` extracts and schema-audits one archive FCB, projects every independently editable inline field, verifies that each canonical value re-encodes byte-exactly, and atomically writes a UTF-8 TSV without overwriting existing output. Each record contains node/field indexes, expected type/field hashes, and an escaped canonical value; the header includes the source payload SHA-256 required by confirmed batch apply.
+
+Loading the unchanged generated template must produce a byte-exact semantic no-op. Referenced fields are reported and excluded because they cannot be independently replaced.
+
+## Real mutation-template and batch-copy validation — 2026-08-23
+
+Generating a template from real `common.fat` entry 93 produced six editable records, zero skipped references, complete 6/6 schema coverage, and source payload SHA-256 `B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD`. Loading the unchanged template planned a byte-exact 120-byte no-op.
+
+Changing only the generated `SpawnThreadSafe` record to `true` produced planned payload SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`. Batch dry-run passed payload, untouched-entry, and DAT-prefix verification. Batch copy produced FAT SHA-256 `EB57C1D0E3DAED85B3AE88E9CEA83B760AF0F18F9266174B83FD6C5F49672E8A` and DAT SHA-256 `A3CF0A8195B6AC43D93A78D8B7509BDCA22D3A9D9289D110885CC2BE9536B9D0`, byte-identical to the previously game-load-tested archive pair. The live game FAT/DAT lengths and timestamps remained unchanged.
+
 ## Next gate
 
-Add a manifest generator that selects fields by stable type/field identities instead of requiring users to hand-author node and field indexes.
+Generalize batch mutation from multiple fields in one FCB entry to multiple FCB entries committed in one archive rebuild and rollback transaction.

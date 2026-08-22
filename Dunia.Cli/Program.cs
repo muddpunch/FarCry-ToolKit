@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
@@ -45,6 +46,7 @@ internal static class Program
           dunia fcb schema-audit <input.fcb> <schema.txt>
           dunia fcb mutate <input.fcb> <output.fcb> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb mutation-plan <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb mutation-template <archive.fat> <entry-index> <resource-hash> <schema.txt> <output.tsv>
           dunia fcb mutation-plan-batch <archive.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
@@ -286,6 +288,20 @@ internal static class Program
                 expectedBatchPlanResourceHash,
                 batchPlanSchemaPath,
                 batchPlanMutationsPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "mutation-template", var templateArchivePath, var rawTemplateEntryIndex,
+                var rawTemplateResourceHash, var templateSchemaPath, var templateOutputPath]
+            && TryParseEntryIndex(rawTemplateEntryIndex, out int templateEntryIndex)
+            && TryParseResourceHash(rawTemplateResourceHash, out ulong expectedTemplateResourceHash))
+        {
+            return await CreateFcbArchiveMutationTemplateAsync(
+                templateArchivePath,
+                templateEntryIndex,
+                expectedTemplateResourceHash,
+                templateSchemaPath,
+                templateOutputPath).ConfigureAwait(false);
         }
 
         if (args is [
@@ -1151,6 +1167,94 @@ internal static class Program
         }
     }
 
+    private static async Task<int> CreateFcbArchiveMutationTemplateAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        string outputPath)
+    {
+        string? temporaryPath = null;
+        try
+        {
+            FcbArchiveMutationManifestResult result = await
+                FcbArchiveMutationManifestService.CreateAsync(
+                    ArchivePair.FromIndex(archivePath),
+                    entryIndex,
+                    expectedResourceHash,
+                    LoadFcbValueSchema(schemaPath)).ConfigureAwait(false);
+            string fullOutputPath = Path.GetFullPath(outputPath);
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Mutation template output already exists.");
+            }
+
+            string? directory = Path.GetDirectoryName(fullOutputPath);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException("Mutation template output directory does not exist.");
+            }
+
+            temporaryPath = Path.Combine(
+                directory,
+                $".{Path.GetFileName(fullOutputPath)}.{Guid.NewGuid():N}.tmp");
+            await using (var output = new FileStream(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                await using var writer = new StreamWriter(
+                    output,
+                    new UTF8Encoding(false),
+                    64 * 1024,
+                    true);
+                await writer.WriteLineAsync("# NODE_INDEX<TAB>FIELD_INDEX<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE")
+                    .ConfigureAwait(false);
+                await writer.WriteLineAsync($"# source.payload.sha256={result.SourcePayloadSha256}")
+                    .ConfigureAwait(false);
+                foreach (FcbArchiveMutationManifestEntry entry in result.Entries)
+                {
+                    await writer.WriteLineAsync(FormattableString.Invariant(
+                        $"{entry.NodeIndex}\t{entry.FieldIndex}\t{entry.TypeHash:X8}\t{entry.FieldHash:X8}\t{FcbMutationTsvCodec.EscapeValue(entry.Value)}"))
+                        .ConfigureAwait(false);
+                }
+
+                await writer.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            Console.WriteLine($"output={fullOutputPath}");
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine(FormattableString.Invariant($"archive.entries={result.ArchiveEntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"schema.fields={result.SchemaFieldCount}"));
+            Console.WriteLine(FormattableString.Invariant($"schema.resolved={result.SchemaResolvedCount}"));
+            Console.WriteLine(FormattableString.Invariant($"editable.fields={result.Entries.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"referenced.skipped={result.ReferencedFieldCount}"));
+            Console.WriteLine(FormattableString.Invariant($"payload.source.length={result.SourcePayloadLength}"));
+            Console.WriteLine($"payload.source.sha256={result.SourcePayloadSha256}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
     private static async Task<int> DryRunFcbArchiveBatchMutationAsync(
         string archivePath,
         int entryIndex,
@@ -1845,7 +1949,12 @@ internal static class Program
                     $"Invalid mutation record at line {lineNumber}; expected NODE<TAB>FIELD<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE.");
             }
 
-            mutations.Add(new(nodeIndex, fieldIndex, typeHash, fieldHash, columns[4]));
+            mutations.Add(new(
+                nodeIndex,
+                fieldIndex,
+                typeHash,
+                fieldHash,
+                FcbMutationTsvCodec.UnescapeValue(columns[4])));
         }
 
         if (mutations.Count == 0)
