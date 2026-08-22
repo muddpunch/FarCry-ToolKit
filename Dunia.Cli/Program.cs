@@ -3,6 +3,7 @@ using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
 using Dunia.Formats.Changes;
+using Dunia.Formats.Fcb;
 using Dunia.Formats.Hashing;
 using Dunia.Formats.Textures;
 
@@ -30,6 +31,11 @@ internal static class Program
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
+
+        FCB operations:
+          dunia fcb probe <input.fcb>
+          dunia fcb verify <input.fcb>
+          dunia fcb scan <archive.fat> [--limit N]
 
         Archive operations:
           dunia probe <archive.fat>
@@ -114,6 +120,28 @@ internal static class Program
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
+        }
+
+        if (args is ["fcb", "probe", var fcbPath])
+        {
+            return ProbeFcb(fcbPath);
+        }
+
+        if (args is ["fcb", "verify", var verifiedFcbPath])
+        {
+            return VerifyFcb(verifiedFcbPath);
+        }
+
+        if (args is ["fcb", "scan", var scanFatPath])
+        {
+            return await ScanFcbAsync(scanFatPath, 100).ConfigureAwait(false);
+        }
+
+        if (args is ["fcb", "scan", var limitedScanFatPath, "--limit", var rawScanLimit]
+            && int.TryParse(rawScanLimit, NumberStyles.None, CultureInfo.InvariantCulture, out int scanLimit)
+            && scanLimit > 0)
+        {
+            return await ScanFcbAsync(limitedScanFatPath, scanLimit).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -225,6 +253,77 @@ internal static class Program
             {
                 File.Delete(temporaryPath);
             }
+        }
+    }
+
+    private static int ProbeFcb(string path)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(path);
+            FcbDocument document = FcbReader.Read(input);
+            Console.WriteLine($"path={Path.GetFullPath(path)}");
+            Console.WriteLine(FormattableString.Invariant($"version={document.Header.Version}"));
+            Console.WriteLine(FormattableString.Invariant($"flags={document.Header.Flags}"));
+            Console.WriteLine(FormattableString.Invariant($"declared.objects={document.Header.DeclaredObjectCount}"));
+            Console.WriteLine(FormattableString.Invariant($"declared.values={document.Header.DeclaredValueCount}"));
+            Console.WriteLine(FormattableString.Invariant($"parsed.unique-nodes={document.UniqueNodeCount}"));
+            Console.WriteLine(FormattableString.Invariant($"parsed.fields={document.FieldCount}"));
+            Console.WriteLine(FormattableString.Invariant($"root.type-hash={document.Root.TypeHash:X8}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int VerifyFcb(string path)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(path);
+            FcbRoundTripVerificationResult result = FcbRoundTripVerifier.Verify(input);
+            Console.WriteLine(FormattableString.Invariant($"length={result.Length}"));
+            Console.WriteLine($"source.sha256={result.SourceSha256}");
+            Console.WriteLine($"output.sha256={result.OutputSha256}");
+            Console.WriteLine($"byte-exact={result.IsByteExact.ToString().ToLowerInvariant()}");
+            return result.IsByteExact ? 0 : 4;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ScanFcbAsync(string fatPath, int limit)
+    {
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            await using FileStream fat = File.OpenRead(pair.FatPath);
+            await using FileStream data = File.OpenRead(pair.DatPath);
+            FatV10Index index = FatV10IndexReader.Read(fat, data.Length);
+            FcbArchiveScanResult result = await FcbArchiveScanner.ScanAsync(data, index, limit)
+                .ConfigureAwait(false);
+            Console.WriteLine("index\thash\tuncompressed\tcompression");
+            foreach (FcbArchiveMatch match in result.Matches)
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"{match.EntryIndex}\t{match.NameHash:X16}\t{match.UncompressedSize}\t{match.CompressionScheme.ToString().ToLowerInvariant()}"));
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"matches={result.Matches.Count}"));
+            Console.WriteLine(FormattableString.Invariant($"scanned={result.ScannedEntryCount}"));
+            Console.WriteLine(FormattableString.Invariant($"skipped={result.SkippedEntryCount}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
         }
     }
 
