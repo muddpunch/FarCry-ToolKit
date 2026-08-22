@@ -29,15 +29,12 @@ public sealed class FcbValueProjectorTests
         FcbValueProjection projection = FcbValueProjector.Project(field);
 
         Assert.True(projection.IsAmbiguous);
-        Assert.Collection(
+        Assert.Contains(projection.Candidates, candidate => candidate.Kind == FcbValueKind.Signed32Bit);
+        Assert.Contains(projection.Candidates, candidate => candidate.Kind == FcbValueKind.Unsigned32Bit);
+        Assert.Contains(projection.Candidates, candidate => candidate.Kind == FcbValueKind.Crc32Hash);
+        Assert.Contains(
             projection.Candidates,
-            candidate => Assert.Equal(FcbValueKind.Signed32Bit, candidate.Kind),
-            candidate => Assert.Equal(FcbValueKind.Unsigned32Bit, candidate.Kind),
-            candidate =>
-            {
-                Assert.Equal(FcbValueKind.Ieee754Binary32, candidate.Kind);
-                Assert.Equal("1", candidate.Value);
-            });
+            candidate => candidate.Kind == FcbValueKind.Ieee754Binary32 && candidate.Value == "1");
     }
 
     [Fact]

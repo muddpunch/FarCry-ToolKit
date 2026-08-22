@@ -48,8 +48,6 @@ Two temporary game-derived fixtures from `common.fat` passed `read -> write -> S
 
 Both temporary fixtures were deleted and are not stored in the repository.
 
-## Next gate
-
 ## CRC32 name recovery — 2026-08-22
 
 FCB type and field names use case-sensitive CRC-32/ISO-HDLC (`poly=EDB88320`, `init/xorout=FFFFFFFF`). Plain-text lists and Dunia `binary_classes.xml` definitions are supported; XML parsing prohibits DTD resolution.
@@ -66,8 +64,6 @@ Targeted ASCII scanning of the local `FC_m64.dll` against the eight hashes in en
 | `EF14ED8F` | `LibraryVersion` |
 
 `CF68E402` and `E7046466` remain unresolved and are rendered as `<unknown:HASH>`. The FC2 definitions resolve none of the eight hashes, so FC2 names are not reused as FC5 labels.
-
-## Next gate
 
 ## Archive-wide validation — 2026-08-22
 
@@ -93,8 +89,6 @@ Targeted ASCII discovery against the local `FC_m64.dll` checked 13,345,198 print
 
 Generated maps use verified `HASH<TAB>NAME` records, are atomically published without overwriting existing files, and retain every collision candidate. The local generated map is not committed.
 
-## Next gate
-
 ## Read-only value projections — 2026-08-22
 
 `FcbValueProjector` always retains raw hex and emits zero or more explicitly qualified candidates:
@@ -104,6 +98,18 @@ Generated maps use verified `HASH<TAB>NAME` records, are atomically published wi
 
 No size-compatible candidate is selected automatically. Real entry 93 exposes `SNomadDbLibLoader` and `Retargeting_ObjectSettings` as structural strings while its 1/4/8-byte fields remain visibly ambiguous. Running the projection does not modify the graph; the fixture still passes byte-exact SHA-256 round-trip verification.
 
+## External value schema and coverage gate — 2026-08-22
+
+`FcbValueSchema` loads exact `(node type hash, field hash) -> codec` mappings. Duplicate keys, malformed hashes, and unknown codecs are rejected. `FcbTypedValueProjector` reports `Resolved`, `MissingSchema`, or `Incompatible` without modifying raw bytes.
+
+`FcbValueSchemaCoverageAnalyzer` traverses the graph and requires every field to resolve against a compatible schema codec. Real entry 93 passes with `fields=6`, `resolved=6`, `missing=0`, `incompatible=0`, and `complete=true` using `data/fcb-schema.fc5.txt`.
+
+## Schema-gated mutation API — 2026-08-22
+
+`FcbValueMutator.ReplaceInlineField` requires complete source schema coverage, verifies replacement compatibility with the exact pair codec, clones graph identity, propagates inline-value changes through backward references, and accepts the result only after serialize/reparse stability and a second complete coverage audit.
+
+Referenced fields cannot be replaced independently. The raw file-writing CLI remains disabled.
+
 ## Next gate
 
-Add an evidence-backed external schema mapping `(node type hash, field hash) -> codec` to disambiguate projections. Keep mutation disabled when the schema is absent, conflicting, or incompatible with payload length.
+Add an atomic CLI command that writes a schema-gated mutation to a new FCB file without overwriting input or existing output. Validate it on a copied archive before integrating mutation with FAT/DAT rebuilding.

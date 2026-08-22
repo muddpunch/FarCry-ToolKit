@@ -1,0 +1,8 @@
+# node-type-hash field-hash codec
+# Entry 93: Nomad DB library loader, confirmed against raw values and FC_m64.dll identifiers.
+E7046466 723A4D89 Boolean
+1F027DA1 CF68E402 AsciiNullTerminated
+1F027DA1 25368426 Crc32Hash
+1F027DA1 EF14ED8F Unsigned32Bit
+1F027DA1 1EE89A13 Unsigned64Bit
+1F027DA1 7D2D7152 AsciiNullTerminated

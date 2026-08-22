@@ -40,7 +40,9 @@ internal static class Program
           dunia fcb dump <input.fcb> [--names names.txt]
           dunia fcb dump <input.fcb> --values
           dunia fcb dump <input.fcb> --names <names.txt> --values
+          dunia fcb dump <input.fcb> --schema <schema.txt> [--names <names.txt>] [--values]
           dunia fcb audit <input.fcb> <names.txt>
+          dunia fcb schema-audit <input.fcb> <schema.txt>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
           dunia fcb archive-discover <archive.fat> <candidate-binary>
@@ -160,34 +162,19 @@ internal static class Program
             return 0;
         }
 
-        if (args is ["fcb", "dump", var dumpedFcbPath])
+        if (args.Length >= 3 && args[0] == "fcb" && args[1] == "dump")
         {
-            return DumpFcb(dumpedFcbPath, null, false);
-        }
-
-        if (args is ["fcb", "dump", var namedFcbPath, "--names", var fcbNamesPath])
-        {
-            return DumpFcb(namedFcbPath, fcbNamesPath, false);
-        }
-
-        if (args is ["fcb", "dump", var valuedFcbPath, "--values"])
-        {
-            return DumpFcb(valuedFcbPath, null, true);
-        }
-
-        if (args is ["fcb", "dump", var namedValuedFcbPath, "--names", var valueNamesPath, "--values"])
-        {
-            return DumpFcb(namedValuedFcbPath, valueNamesPath, true);
-        }
-
-        if (args is ["fcb", "dump", var reversedValuedFcbPath, "--values", "--names", var reversedValueNamesPath])
-        {
-            return DumpFcb(reversedValuedFcbPath, reversedValueNamesPath, true);
+            return ParseAndDumpFcb(args);
         }
 
         if (args is ["fcb", "audit", var auditedFcbPath, var auditedNamesPath])
         {
             return AuditFcbNames(auditedFcbPath, auditedNamesPath);
+        }
+
+        if (args is ["fcb", "schema-audit", var schemaFcbPath, var schemaAuditPath])
+        {
+            return AuditFcbValueSchema(schemaFcbPath, schemaAuditPath);
         }
 
         if (args is ["fcb", "discover", var discoveryFcbPath, var candidateBinaryPath])
@@ -395,13 +382,45 @@ internal static class Program
         }
     }
 
-    private static int DumpFcb(string path, string? namesPath, bool includeValues)
+    private static int ParseAndDumpFcb(string[] args)
+    {
+        string? namesPath = null;
+        string? schemaPath = null;
+        bool includeValues = false;
+        for (int i = 3; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--values" when !includeValues:
+                    includeValues = true;
+                    break;
+                case "--names" when namesPath is null && i + 1 < args.Length:
+                    namesPath = args[++i];
+                    break;
+                case "--schema" when schemaPath is null && i + 1 < args.Length:
+                    schemaPath = args[++i];
+                    break;
+                default:
+                    Console.Error.WriteLine("Invalid FCB dump option.");
+                    return 2;
+            }
+        }
+
+        return DumpFcb(args[2], namesPath, schemaPath, includeValues);
+    }
+
+    private static int DumpFcb(
+        string path,
+        string? namesPath,
+        string? schemaPath,
+        bool includeValues)
     {
         try
         {
             using FileStream input = File.OpenRead(path);
             FcbDocument document = FcbReader.Read(input);
             FcbNameResolver? resolver = namesPath is null ? null : LoadFcbResolver(namesPath);
+            FcbValueSchema? schema = schemaPath is null ? null : LoadFcbValueSchema(schemaPath);
             IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
             var ids = new Dictionary<FcbNode, int>(ReferenceEqualityComparer.Instance);
             for (int i = 0; i < nodes.Count; i++)
@@ -418,8 +437,9 @@ internal static class Program
                 {
                     FcbField field = node.Fields[fieldIndex];
                     string values = includeValues ? RenderFcbValues(field) : string.Empty;
+                    string typed = schema is null ? string.Empty : RenderFcbTypedValue(node.TypeHash, field, schema);
                     Console.WriteLine(FormattableString.Invariant(
-                        $"field={nodeIndex}.{fieldIndex}\thash={field.NameHash:X8}\tname={RenderFcbName(field.NameHash, resolver)}\tbytes={field.Data.Length}\treference={field.IsReference.ToString().ToLowerInvariant()}{values}"));
+                        $"field={nodeIndex}.{fieldIndex}\thash={field.NameHash:X8}\tname={RenderFcbName(field.NameHash, resolver)}\tbytes={field.Data.Length}\treference={field.IsReference.ToString().ToLowerInvariant()}{values}{typed}"));
                 }
 
                 for (int childIndex = 0; childIndex < node.Children.Count; childIndex++)
@@ -453,6 +473,17 @@ internal static class Program
     private static string EscapeFcbValue(string value) =>
         $"\"{value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
 
+    private static string RenderFcbTypedValue(
+        uint nodeTypeHash,
+        FcbField field,
+        FcbValueSchema schema)
+    {
+        FcbTypedValueProjection projection = FcbTypedValueProjector.Project(nodeTypeHash, field, schema);
+        string codec = projection.Codec?.ToString() ?? "<none>";
+        string value = projection.Value is null ? "<none>" : EscapeFcbValue(projection.Value);
+        return $"\tschema.status={projection.Status}\tschema.codec={codec}\tschema.value={value}";
+    }
+
     private static int AuditFcbNames(string path, string namesPath)
     {
         try
@@ -473,6 +504,40 @@ internal static class Program
             bool complete = types.IsComplete && fields.IsComplete;
             Console.WriteLine($"complete={complete.ToString().ToLowerInvariant()}");
             return complete ? 0 : 3;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int AuditFcbValueSchema(string path, string schemaPath)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(path);
+            FcbValueSchemaCoverageReport report = FcbValueSchemaCoverageAnalyzer.Analyze(
+                FcbReader.Read(input),
+                LoadFcbValueSchema(schemaPath));
+            Console.WriteLine(FormattableString.Invariant($"fields={report.FieldCount}"));
+            Console.WriteLine(FormattableString.Invariant($"resolved={report.ResolvedCount}"));
+            Console.WriteLine(FormattableString.Invariant($"missing={report.MissingCount}"));
+            Console.WriteLine(FormattableString.Invariant($"incompatible={report.IncompatibleCount}"));
+            foreach (FcbValueSchemaKey key in report.MissingKeys)
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"missing.key={key.NodeTypeHash:X8}:{key.FieldHash:X8}"));
+            }
+
+            foreach (FcbValueSchemaKey key in report.IncompatibleKeys)
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"incompatible.key={key.NodeTypeHash:X8}:{key.FieldHash:X8}"));
+            }
+
+            Console.WriteLine($"complete={report.IsComplete.ToString().ToLowerInvariant()}");
+            return report.IsComplete ? 0 : 3;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -1057,6 +1122,12 @@ internal static class Program
 
         using StreamReader textInput = File.OpenText(namesPath);
         return FcbNameResolver.Load(textInput);
+    }
+
+    private static FcbValueSchema LoadFcbValueSchema(string schemaPath)
+    {
+        using StreamReader input = File.OpenText(schemaPath);
+        return FcbValueSchema.Load(input);
     }
 
     private static bool TryParseHash(string value, out ulong hash)

@@ -49,6 +49,10 @@ public static class FcbValueProjector
                     FcbValueEvidence.SizeCompatible,
                     Format(BinaryPrimitives.ReadUInt32LittleEndian(data))));
                 candidates.Add(new(
+                    FcbValueKind.Crc32Hash,
+                    FcbValueEvidence.SizeCompatible,
+                    BinaryPrimitives.ReadUInt32LittleEndian(data).ToString("X8", CultureInfo.InvariantCulture)));
+                candidates.Add(new(
                     FcbValueKind.Ieee754Binary32,
                     FcbValueEvidence.SizeCompatible,
                     Format(BitConverter.Int32BitsToSingle(int32))));
@@ -60,6 +64,10 @@ public static class FcbValueProjector
                     FcbValueKind.Unsigned64Bit,
                     FcbValueEvidence.SizeCompatible,
                     Format(BinaryPrimitives.ReadUInt64LittleEndian(data))));
+                candidates.Add(new(
+                    FcbValueKind.Crc64Hash,
+                    FcbValueEvidence.SizeCompatible,
+                    BinaryPrimitives.ReadUInt64LittleEndian(data).ToString("X16", CultureInfo.InvariantCulture)));
                 candidates.Add(new(
                     FcbValueKind.Ieee754Binary64,
                     FcbValueEvidence.SizeCompatible,

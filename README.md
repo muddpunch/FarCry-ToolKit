@@ -93,6 +93,8 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | FCB CRC32 hashing, name resolution, coverage audit, and binary discovery | Implemented; unresolved hashes remain explicit |
 | Archive-wide FCB analysis and name discovery | Implemented; validated across real `common.fat` |
 | Read-only FCB typed value projections | Implemented; ambiguity and evidence are explicit |
+| External FCB value schema and coverage gate | Implemented; real entry 93 resolves 6/6 fields |
+| Schema-gated FCB field mutation | Implemented in the format library; file-writing CLI intentionally disabled |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -149,6 +151,9 @@ Warnings are treated as errors.
 - `FcbArchiveAnalyzer` parses every eligible FCB payload in one archive pass and aggregates type/field hash occurrences.
 - `FcbNameDiscovery` scans printable binary identifiers only against hashes present in a selected FCB and retains source offsets as evidence.
 - `FcbValueProjector` exposes raw hex plus structural or size-compatible string, boolean, integer, IEEE-754, and vector candidates without mutating fields.
+- `FcbValueSchema` maps exact `(node type hash, field hash)` pairs to codecs and rejects malformed or conflicting definitions.
+- `FcbTypedValueProjector` resolves only schema-selected compatible candidates; `FcbValueSchemaCoverageAnalyzer` blocks incomplete or incompatible schemas.
+- `FcbValueMutator` clones the graph, updates inline values and their references, then requires schema coverage and byte-exact serialize/reparse stability.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
@@ -213,6 +218,15 @@ dotnet run --project Dunia.Cli -- entry "common.fat" 0 --names "paths.txt"
 
 Blank lines and lines beginning with `#` or `;` are ignored. Multiple candidates for the same CRC64 are reported as collisions; unresolved entries remain explicit as `<unknown>`.
 `hash audit` exits with code `3` until the supplied catalog resolves every archive entry uniquely.
+
+Inspect an FCB using explicit CRC32 names and typed codecs, then require complete schema coverage:
+
+```powershell
+dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.fc5.txt" --schema "data\fcb-schema.fc5.txt" --values
+dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
+```
+
+Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
 
 ## Correctness requirements
 
