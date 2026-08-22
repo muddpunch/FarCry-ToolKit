@@ -116,7 +116,8 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
             token);
 
         Assert.True(result.SemanticVerified);
-        Assert.True(result.Backup.CreatedAny);
+        Assert.False(result.NoOp);
+        Assert.True(Assert.IsType<ArchivePairBackupResult>(result.Backup).CreatedAny);
         Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath + ".original", token));
         Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath + ".original", token));
         using FileStream fat = File.OpenRead(target.FatPath);
@@ -129,6 +130,41 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         payload.Position = 0;
         Assert.Equal<byte>([0], FcbReader.Read(payload).Root.Fields[0].Data.ToArray());
         Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
+    [Fact]
+    public async Task ApplyAsyncShortCircuitsNoOpWithoutBackupOrArchiveWrite()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair target = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationApplyResult result = await FcbArchiveMutationApplyService.ApplyAsync(
+            target,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "1",
+            directory,
+            token);
+
+        Assert.True(result.NoOp);
+        Assert.True(result.SemanticVerified);
+        Assert.Null(result.Backup);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath, token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath, token));
+        Assert.False(File.Exists(target.FatPath + ".original"));
+        Assert.False(File.Exists(target.DatPath + ".original"));
+        Assert.Empty(Directory.EnumerateDirectories(directory, "fcb-dryrun-*"));
+        Assert.Empty(Directory.EnumerateDirectories(directory, "session-*"));
     }
 
     [Fact]

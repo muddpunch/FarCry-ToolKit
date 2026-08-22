@@ -3,6 +3,7 @@ namespace Dunia.Formats.Fcb;
 public sealed record FcbArchiveMutationPlanResult(
     int EntryIndex,
     ulong ResourceNameHash,
+    int ArchiveEntryCount,
     int NodeIndex,
     int FieldIndex,
     uint TypeHash,

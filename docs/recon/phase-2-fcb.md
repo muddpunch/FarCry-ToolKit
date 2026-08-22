@@ -152,6 +152,12 @@ The command completed successfully against the local `common.fat/common.dat` bac
 
 Against real `common.fat` entry 93, planning `false -> true` predicted the independently validated payload SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D` with `no-op=false`. Planning `false -> false` retained source SHA-256 `B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD` with `no-op=true`.
 
+## Semantic no-op apply — 2026-08-23
+
+Confirmed FCB apply now executes the read-only plan first. A semantic no-op returns success with `applied=false`, `no-op=true`, `semantic.verified=true`, and `backup.created=false` before dry-run, staging, backup creation, or archive rebuilding.
+
+The behavior passed against real `common.fat` entry 93 for `false -> false`. Independent before/after checks confirmed identical FAT/DAT lengths, last-write timestamps, and SHA-256 values.
+
 ## Next gate
 
-Make confirmed FCB apply short-circuit semantic no-ops before dry-run, backup creation, or archive rebuilding, while returning an explicit successful no-op result.
+Bind confirmed apply to the read-only plan by requiring the expected source payload SHA-256. Reject stale plans before dry-run, backup creation, or archive rebuilding.

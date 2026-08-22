@@ -104,6 +104,7 @@ public static class FcbArchiveMutationPlanService
         return new(
             entryIndex,
             entry.NameHash,
+            index.Entries.Count,
             nodeIndex,
             fieldIndex,
             node.TypeHash,

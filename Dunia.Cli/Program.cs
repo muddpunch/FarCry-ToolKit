@@ -1028,6 +1028,7 @@ internal static class Program
             Console.WriteLine("source.modified=false");
             Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
             Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine(FormattableString.Invariant($"archive.entries={result.ArchiveEntryCount}"));
             Console.WriteLine(FormattableString.Invariant($"node={result.NodeIndex}"));
             Console.WriteLine(FormattableString.Invariant($"field={result.FieldIndex}"));
             Console.WriteLine(FormattableString.Invariant($"type.hash={result.TypeHash:X8}"));
@@ -1122,7 +1123,7 @@ internal static class Program
                 expectedFieldHash,
                 value,
                 Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
-            Console.WriteLine("applied=true");
+            Console.WriteLine($"applied={(!result.NoOp).ToString().ToLowerInvariant()}");
             Console.WriteLine($"fat.target={result.TargetPair.FatPath}");
             Console.WriteLine($"dat.target={result.TargetPair.DatPath}");
             Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
@@ -1130,12 +1131,17 @@ internal static class Program
             Console.WriteLine($"codec={result.Codec}");
             Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
             Console.WriteLine($"payload.sha256={result.PayloadSha256}");
+            Console.WriteLine($"no-op={result.NoOp.ToString().ToLowerInvariant()}");
             Console.WriteLine($"semantic.verified={result.SemanticVerified.ToString().ToLowerInvariant()}");
-            Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
-            Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
-            Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
-            Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
-            Console.WriteLine($"backup.created={result.Backup.CreatedAny.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"backup.created={(result.Backup?.CreatedAny ?? false).ToString().ToLowerInvariant()}");
+            if (result.Backup is not null)
+            {
+                Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+                Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
+                Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+                Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
+            }
+
             Console.WriteLine("verified=true");
             return 0;
         }

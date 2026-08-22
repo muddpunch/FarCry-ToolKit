@@ -25,6 +25,32 @@ public static class FcbArchiveMutationApplyService
         ArgumentNullException.ThrowIfNull(value);
         ArgumentException.ThrowIfNullOrWhiteSpace(temporaryRoot);
 
+        FcbArchiveMutationPlanResult plan = await FcbArchiveMutationPlanService.CreateAsync(
+            target,
+            entryIndex,
+            expectedResourceNameHash,
+            schema,
+            nodeIndex,
+            fieldIndex,
+            expectedTypeHash,
+            expectedFieldHash,
+            value,
+            cancellationToken).ConfigureAwait(false);
+        if (plan.NoOp)
+        {
+            return new(
+                target,
+                null,
+                entryIndex,
+                expectedResourceNameHash,
+                plan.Codec,
+                plan.SourcePayloadLength,
+                plan.SourcePayloadSha256,
+                plan.ArchiveEntryCount,
+                true,
+                true);
+        }
+
         FcbArchiveMutationDryRunResult dryRun = await FcbArchiveMutationDryRunService.RunAsync(
             target,
             entryIndex,
@@ -50,9 +76,10 @@ public static class FcbArchiveMutationApplyService
             value,
             cancellationToken).ConfigureAwait(false);
         string mutationHash = Convert.ToHexString(SHA256.HashData(mutation));
-        if (!string.Equals(mutationHash, dryRun.PayloadSha256, StringComparison.Ordinal))
+        if (!string.Equals(mutationHash, dryRun.PayloadSha256, StringComparison.Ordinal) ||
+            !string.Equals(mutationHash, plan.PlannedPayloadSha256, StringComparison.Ordinal))
         {
-            throw new InvalidDataException("Repeated FCB mutation differs from the verified dry-run payload.");
+            throw new InvalidDataException("Repeated FCB mutation differs from the planned or dry-run payload.");
         }
 
         bool semanticVerified = false;
@@ -94,6 +121,7 @@ public static class FcbArchiveMutationApplyService
             mutation.Length,
             mutationHash,
             apply.Build.Index.Entries.Count,
+            false,
             semanticVerified);
     }
 
