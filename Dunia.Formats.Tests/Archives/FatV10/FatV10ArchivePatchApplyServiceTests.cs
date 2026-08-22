@@ -170,6 +170,8 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
             builtIndex,
             new FileInfo(built.DatPath).Length,
             1);
+        ArchivePairFingerprint sourceFingerprint = await
+            FatV10ArchivePatchApplyService.ComputeFingerprintAsync(target, token);
         var mismatchedReplacement = new StagedReplacement(
             Guid.NewGuid(),
             "replacement.bin",
@@ -183,6 +185,7 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
                 rollbackFat,
                 rollbackDat,
                 expected,
+                sourceFingerprint,
                 new Dictionary<int, StagedReplacement> { [0] = mismatchedReplacement },
                 static (_, _) => Task.CompletedTask,
                 token));
@@ -191,6 +194,50 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
         Assert.Equal(originalDat, await File.ReadAllBytesAsync(target.DatPath, token));
         Assert.False(File.Exists(rollbackFat));
         Assert.False(File.Exists(rollbackDat));
+    }
+
+    [Fact]
+    public async Task SourceChangeBeforePublicationRestoresChangedPair()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ArchivePair target = CreatePair([1, 2, 3], "target");
+        ArchivePair built = CreatePair([9, 8], "built");
+        ArchivePairFingerprint sourceFingerprint = await
+            FatV10ArchivePatchApplyService.ComputeFingerprintAsync(target, token);
+        await File.WriteAllBytesAsync(target.DatPath, [4, 5, 6], token);
+        byte[] changedFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        byte[] changedDat = await File.ReadAllBytesAsync(target.DatPath, token);
+        string rollbackFat = Path.Combine(directory, "rollback.fat.tmp");
+        string rollbackDat = Path.Combine(directory, "rollback.dat.tmp");
+        FatV10Index builtIndex;
+        using (FileStream fat = File.OpenRead(built.FatPath))
+        {
+            builtIndex = FatV10IndexReader.Read(fat, new FileInfo(built.DatPath).Length);
+        }
+
+        var expected = new FatV10ArchivePatchBuildResult(
+            builtIndex,
+            new FileInfo(built.DatPath).Length,
+            1);
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            FatV10ArchivePatchApplyService.PublishWithRollbackAsync(
+                target,
+                built,
+                rollbackFat,
+                rollbackDat,
+                expected,
+                sourceFingerprint,
+                new Dictionary<int, StagedReplacement>(),
+                static (_, _) => Task.CompletedTask,
+                token));
+
+        Assert.Contains("Source FAT/DAT pair changed", error.Message, StringComparison.Ordinal);
+        Assert.Equal(changedFat, await File.ReadAllBytesAsync(target.FatPath, token));
+        Assert.Equal(changedDat, await File.ReadAllBytesAsync(target.DatPath, token));
+        Assert.False(File.Exists(rollbackFat));
+        Assert.False(File.Exists(rollbackDat));
+        Assert.Equal(new byte[] { 9, 8 }, await File.ReadAllBytesAsync(built.DatPath, token));
     }
 
     [Fact]
@@ -240,6 +287,8 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
                 Array.AsReadOnly(new[] { invalidExpectedEntry })),
             2,
             1);
+        ArchivePairFingerprint sourceFingerprint = await
+            FatV10ArchivePatchApplyService.ComputeFingerprintAsync(target, token);
 
         await Assert.ThrowsAsync<InvalidDataException>(() => FatV10ArchivePatchApplyService.PublishWithRollbackAsync(
             target,
@@ -247,6 +296,7 @@ public sealed class FatV10ArchivePatchApplyServiceTests : IDisposable
             rollbackFat,
             rollbackDat,
             expected,
+            sourceFingerprint,
             new Dictionary<int, StagedReplacement>(),
             static (_, _) => Task.CompletedTask,
             token));

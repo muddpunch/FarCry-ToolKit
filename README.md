@@ -58,7 +58,7 @@ patch.dat          -> patch.dat.original
 
 An existing `.original` file is never overwritten. Backup publication is atomic, concurrent calls create exactly one backup, and temporary files are removed after success, failure, or cancellation.
 
-In-place CLI writes require an explicit `--confirm-write`, expected resource hashes, verified `.original` backups, post-publication validation, and rollback on any failure. The game must be closed before invoking a write command.
+In-place CLI writes require an explicit `--confirm-write`, expected resource hashes, a stable source-pair fingerprint, verified `.original` backups, post-publication validation, and rollback on any failure. The game must be closed before invoking a write command.
 
 ## Current status
 
@@ -76,7 +76,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
 | Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
-| Transactional in-place Apply service | Implemented and tested |
+| Transactional in-place Apply service | Implemented; source-pair locking and SHA-256 stability checks included |
 | Confirmed in-place CLI Apply | Implemented; requires index plus expected hash |
 | Confirmed transactional archive restore | Implemented; requires both expected backup SHA-256 values |
 | CLI Apply dry-run | Implemented; builds and validates without modifying the source |
@@ -146,7 +146,7 @@ Warnings are treated as errors.
 - `FatV10IndexWriter` validates packed-field limits and serializes the confirmed FAT v10 envelope and entries.
 - `FatV10ArchivePatchBuilder` preserves the original DAT byte-for-byte, appends verified replacements, and rewrites only affected FAT metadata into separate outputs.
 - `FatV10ArchivePatchFileBuilder` durably writes, reparses, and publishes a new archive pair without modifying the source pair or overwriting existing outputs.
-- `FatV10ArchivePatchApplyService` builds first, creates permanent backups, publishes both files with rollback, and validates the live pair before deleting rollback files.
+- `FatV10ArchivePatchApplyService` locks and fingerprints the source pair, builds first, creates permanent backups, rechecks the rollback pair before publication, and validates the live pair before deleting rollback files.
 - `DuniaCrc64` and `DuniaNameResolver` compute normalized FC5 path hashes and resolve all matching name candidates without guessing.
 - `DuniaCrc32` and `FcbNameResolver` resolve case-sensitive FCB type/field hashes from text lists or Dunia `binary_classes.xml` definitions.
 - `FcbReader` parses FCB v2 headers, raw hash-keyed fields, backward value references, and shared child pointers.

@@ -1,9 +1,12 @@
 using Dunia.Formats.Changes;
+using System.Security.Cryptography;
 
 namespace Dunia.Formats.Archives.FatV10;
 
 public static class FatV10ArchivePatchApplyService
 {
+    private const int BufferSize = 1024 * 1024;
+
     public static Task<FatV10ArchivePatchApplyResult> ApplyAsync(
         ArchivePair target,
         IReadOnlyDictionary<int, StagedReplacement> replacements,
@@ -39,15 +42,28 @@ public static class FatV10ArchivePatchApplyService
 
         try
         {
-            FatV10ArchivePatchFileBuildResult fileBuild = await FatV10ArchivePatchFileBuilder.BuildAsync(
-                target,
-                builtPair,
-                replacements,
-                stagingStore,
-                cancellationToken).ConfigureAwait(false);
-            ArchivePairBackupResult backup = await ArchivePairBackupService.EnsureCreatedAsync(
-                target,
-                cancellationToken).ConfigureAwait(false);
+            FatV10ArchivePatchFileBuildResult fileBuild;
+            ArchivePairBackupResult backup;
+            ArchivePairFingerprint sourceFingerprint;
+
+            await using (FileStream fatLock = OpenSourceLock(target.FatPath))
+            await using (FileStream datLock = OpenSourceLock(target.DatPath))
+            {
+                sourceFingerprint = await ComputeFingerprintAsync(
+                    fatLock,
+                    datLock,
+                    cancellationToken).ConfigureAwait(false);
+                fileBuild = await FatV10ArchivePatchFileBuilder.BuildAsync(
+                    target,
+                    builtPair,
+                    replacements,
+                    stagingStore,
+                    cancellationToken).ConfigureAwait(false);
+                backup = await ArchivePairBackupService.EnsureCreatedAsync(
+                    target,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
 
             await PublishWithRollbackAsync(
@@ -56,6 +72,7 @@ public static class FatV10ArchivePatchApplyService
                 rollbackFatPath,
                 rollbackDatPath,
                 fileBuild.Build,
+                sourceFingerprint,
                 replacements,
                 validatePublishedAsync,
                 cancellationToken).ConfigureAwait(false);
@@ -80,6 +97,7 @@ public static class FatV10ArchivePatchApplyService
         string rollbackFatPath,
         string rollbackDatPath,
         FatV10ArchivePatchBuildResult expected,
+        ArchivePairFingerprint expectedSource,
         IReadOnlyDictionary<int, StagedReplacement> replacements,
         Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
         CancellationToken cancellationToken)
@@ -95,6 +113,15 @@ public static class FatV10ArchivePatchApplyService
             originalFatMoved = true;
             File.Move(target.DatPath, rollbackDatPath, false);
             originalDatMoved = true;
+            ArchivePairFingerprint actualSource = await ComputeFingerprintAsync(
+                new(rollbackFatPath, rollbackDatPath),
+                cancellationToken).ConfigureAwait(false);
+            if (actualSource != expectedSource)
+            {
+                throw new InvalidDataException(
+                    "Source FAT/DAT pair changed while the replacement archive was being prepared.");
+            }
+
             File.Move(built.DatPath, target.DatPath, false);
             builtDatMoved = true;
             File.Move(built.FatPath, target.FatPath, false);
@@ -142,6 +169,37 @@ public static class FatV10ArchivePatchApplyService
             throw;
         }
     }
+
+    internal static async Task<ArchivePairFingerprint> ComputeFingerprintAsync(
+        ArchivePair pair,
+        CancellationToken cancellationToken)
+    {
+        await using FileStream fat = OpenSourceLock(pair.FatPath);
+        await using FileStream dat = OpenSourceLock(pair.DatPath);
+        return await ComputeFingerprintAsync(fat, dat, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<ArchivePairFingerprint> ComputeFingerprintAsync(
+        FileStream fat,
+        FileStream dat,
+        CancellationToken cancellationToken)
+    {
+        byte[] fatHash = await SHA256.HashDataAsync(fat, cancellationToken).ConfigureAwait(false);
+        byte[] datHash = await SHA256.HashDataAsync(dat, cancellationToken).ConfigureAwait(false);
+        return new(
+            fat.Length,
+            Convert.ToHexString(fatHash),
+            dat.Length,
+            Convert.ToHexString(datHash));
+    }
+
+    private static FileStream OpenSourceLock(string path) => new(
+        path,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read,
+        BufferSize,
+        FileOptions.Asynchronous | FileOptions.SequentialScan);
 
     private static void ValidatePublishedPair(
         ArchivePair pair,

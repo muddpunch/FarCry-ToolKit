@@ -164,6 +164,16 @@ Confirmed FCB apply now requires the exact `payload.source.sha256` emitted by `m
 
 A real entry 93 invocation with a stale all-zero hash returned exit code `1` and left FAT/DAT unchanged. The matching source hash retained the verified no-op path. Expected validation errors are now mapped consistently to concise CLI messages without unhandled stack traces.
 
+## Source-pair stability gate — 2026-08-23
+
+Transactional apply now opens both source files with read sharing only, fingerprints their lengths and SHA-256 values, and holds both handles through archive construction and permanent-backup creation. After releasing the handles, publication first moves the live pair to rollback paths and requires the moved pair to match the original fingerprint before installing either rebuilt file.
+
+A synthetic race regression changes the source DAT after construction and before publication. Apply rejects the stale build, restores the changed live pair byte-for-byte, leaves the rebuilt pair unpublished, and removes both rollback files.
+
 ## Next gate
 
-Add source-pair stability verification to transactional apply so the FAT/DAT pair used for building cannot be replaced between build completion and backup/publication.
+Connect the atomic multi-field FCB graph mutator to archive planning, dry-run, and confirmed publication.
+
+## Atomic multi-field graph mutation — 2026-08-23
+
+`FcbValueMutator.ReplaceInlineFields` validates every target and encoded value before cloning, applies all replacements to one graph clone, propagates changes through backward references, then performs one serialize/reparse/schema-coverage verification cycle. Duplicate targets and referenced-field targets are rejected before an output document is returned; the existing single-field API delegates to the same transaction.

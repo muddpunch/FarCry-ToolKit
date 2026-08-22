@@ -8,9 +8,25 @@ public static class FcbValueMutator
         ReadOnlySpan<byte> replacement,
         FcbValueSchema schema)
     {
+        FcbValueBatchMutationResult result = ReplaceInlineFields(
+            document,
+            [new(target, replacement.ToArray())],
+            schema);
+        return new(result.Document, result.Data, result.Codecs[0]);
+    }
+
+    public static FcbValueBatchMutationResult ReplaceInlineFields(
+        FcbDocument document,
+        IReadOnlyList<FcbFieldReplacement> replacements,
+        FcbValueSchema schema)
+    {
         ArgumentNullException.ThrowIfNull(document);
-        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(replacements);
         ArgumentNullException.ThrowIfNull(schema);
+        if (replacements.Count == 0)
+        {
+            throw new ArgumentException("At least one FCB field replacement is required.", nameof(replacements));
+        }
 
         FcbValueSchemaCoverageReport sourceCoverage = FcbValueSchemaCoverageAnalyzer.Analyze(document, schema);
         if (!sourceCoverage.IsComplete)
@@ -18,29 +34,52 @@ public static class FcbValueMutator
             throw new InvalidOperationException("FCB mutation requires complete compatible schema coverage.");
         }
 
-        (FcbNode owner, int matches) = FindOwner(document, target);
-        if (matches != 1)
+        var selected = new Dictionary<FcbField, byte[]>(ReferenceEqualityComparer.Instance);
+        var codecs = new List<FcbValueKind>(replacements.Count);
+        foreach (FcbFieldReplacement replacement in replacements)
         {
-            throw new ArgumentException("Target field must belong to the document exactly once.", nameof(target));
+            ArgumentNullException.ThrowIfNull(replacement);
+            ArgumentNullException.ThrowIfNull(replacement.Target);
+            (FcbNode owner, int matches) = FindOwner(document, replacement.Target);
+            if (matches != 1)
+            {
+                throw new ArgumentException(
+                    "Every target field must belong to the document exactly once.",
+                    nameof(replacements));
+            }
+
+            if (replacement.Target.IsReference)
+            {
+                throw new NotSupportedException("Referenced FCB fields cannot be replaced independently.");
+            }
+
+            if (!selected.TryAdd(replacement.Target, replacement.Data.ToArray()))
+            {
+                throw new ArgumentException("An FCB field cannot be replaced more than once.", nameof(replacements));
+            }
+
+            if (!schema.TryResolve(owner.TypeHash, replacement.Target.NameHash, out FcbValueKind codec))
+            {
+                throw new InvalidOperationException("Target field has no schema codec.");
+            }
+
+            var candidate = new FcbField(
+                replacement.Target.NameHash,
+                selected[replacement.Target],
+                replacement.Target.SourceOffset,
+                null);
+            if (FcbTypedValueProjector.Project(owner.TypeHash, candidate, schema).Status !=
+                FcbTypedValueStatus.Resolved)
+            {
+                throw new ArgumentException(
+                    $"Replacement is incompatible with schema codec {codec}.",
+                    nameof(replacements));
+            }
+
+            codecs.Add(codec);
         }
 
-        if (target.IsReference)
-        {
-            throw new NotSupportedException("Referenced FCB fields cannot be replaced independently.");
-        }
-
-        if (!schema.TryResolve(owner.TypeHash, target.NameHash, out FcbValueKind codec))
-        {
-            throw new InvalidOperationException("Target field has no schema codec.");
-        }
-
-        var candidate = new FcbField(target.NameHash, replacement.ToArray(), target.SourceOffset, null);
-        if (FcbTypedValueProjector.Project(owner.TypeHash, candidate, schema).Status != FcbTypedValueStatus.Resolved)
-        {
-            throw new ArgumentException($"Replacement is incompatible with schema codec {codec}.", nameof(replacement));
-        }
-
-        FcbDocument mutated = CloneReplacing(document, target, candidate.Data.ToArray());
+        FcbDocument mutated = CloneReplacing(document, selected);
         byte[] serialized = Serialize(mutated);
         using var input = new MemoryStream(serialized, false);
         FcbDocument reparsed = FcbReader.Read(input);
@@ -55,7 +94,7 @@ public static class FcbValueMutator
             throw new InvalidDataException("Modified FCB failed serialize/reparse verification.");
         }
 
-        return new(reparsed, serialized, codec);
+        return new(reparsed, serialized, codecs.AsReadOnly());
     }
 
     private static (FcbNode Owner, int Matches) FindOwner(FcbDocument document, FcbField target)
@@ -77,7 +116,9 @@ public static class FcbValueMutator
         return (owner!, matches);
     }
 
-    private static FcbDocument CloneReplacing(FcbDocument source, FcbField target, byte[] replacement)
+    private static FcbDocument CloneReplacing(
+        FcbDocument source,
+        Dictionary<FcbField, byte[]> replacements)
     {
         IReadOnlyList<FcbNode> sourceNodes = FcbGraph.GetUniqueNodes(source);
         var nodes = new Dictionary<FcbNode, FcbNode>(ReferenceEqualityComparer.Instance);
@@ -92,7 +133,9 @@ public static class FcbValueMutator
         {
             foreach (FcbField field in node.Fields.Where(field => !field.IsReference))
             {
-                byte[] data = ReferenceEquals(field, target) ? replacement : field.Data.ToArray();
+                byte[] data = replacements.TryGetValue(field, out byte[]? replacement)
+                    ? replacement
+                    : field.Data.ToArray();
                 fields.Add(field, new FcbField(field.NameHash, data, field.SourceOffset, null));
             }
         }

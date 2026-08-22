@@ -74,6 +74,47 @@ public sealed class FcbValueMutatorTests
         Assert.Same(result.Document.Root.Fields[0], result.Document.Root.Fields[1].ReferenceTarget);
     }
 
+    [Fact]
+    public void ReplaceInlineFieldsAppliesAllChangesInOneVerifiedSerialization()
+    {
+        FcbDocument source = ReadDocumentWithFields(
+            (0x20, new byte[] { 1 }),
+            (0x21, new byte[] { 0 }));
+        FcbValueSchema schema = ReadSchema(
+            "00000010 00000020 Boolean\n00000010 00000021 Boolean\n");
+
+        FcbValueBatchMutationResult result = FcbValueMutator.ReplaceInlineFields(
+            source,
+            [
+                new(source.Root.Fields[0], new byte[] { 0 }),
+                new(source.Root.Fields[1], new byte[] { 1 }),
+            ],
+            schema);
+
+        Assert.Equal([FcbValueKind.Boolean, FcbValueKind.Boolean], result.Codecs);
+        Assert.Equal<byte>([0], result.Document.Root.Fields[0].Data.ToArray());
+        Assert.Equal<byte>([1], result.Document.Root.Fields[1].Data.ToArray());
+        Assert.Equal<byte>([1], source.Root.Fields[0].Data.ToArray());
+        Assert.Equal<byte>([0], source.Root.Fields[1].Data.ToArray());
+        using var verificationInput = new MemoryStream(result.Data.ToArray(), false);
+        Assert.True(FcbRoundTripVerifier.Verify(verificationInput).IsByteExact);
+    }
+
+    [Fact]
+    public void ReplaceInlineFieldsRejectsDuplicateTarget()
+    {
+        FcbDocument source = ReadDocument([1]);
+        FcbValueSchema schema = ReadSchema("00000010 00000020 Boolean\n");
+
+        Assert.Throws<ArgumentException>(() => FcbValueMutator.ReplaceInlineFields(
+            source,
+            [
+                new(source.Root.Fields[0], new byte[] { 0 }),
+                new(source.Root.Fields[0], new byte[] { 1 }),
+            ],
+            schema));
+    }
+
     private static FcbDocument ReadDocument(byte[] value)
     {
         using var body = new MemoryStream();
@@ -83,6 +124,22 @@ public sealed class FcbValueMutatorTests
         WriteUInt32(body, 0x20);
         body.WriteByte(checked((byte)value.Length));
         body.Write(value);
+        return ReadDocumentBody(body.ToArray());
+    }
+
+    private static FcbDocument ReadDocumentWithFields(params (uint Hash, byte[] Value)[] fields)
+    {
+        using var body = new MemoryStream();
+        body.WriteByte(0);
+        WriteUInt32(body, 0x10);
+        body.WriteByte(checked((byte)fields.Length));
+        foreach ((uint hash, byte[] value) in fields)
+        {
+            WriteUInt32(body, hash);
+            body.WriteByte(checked((byte)value.Length));
+            body.Write(value);
+        }
+
         return ReadDocumentBody(body.ToArray());
     }
 
