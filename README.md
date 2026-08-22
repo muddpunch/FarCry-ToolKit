@@ -159,7 +159,7 @@ Warnings are treated as errors.
 - `FcbValueEncoder` canonically encodes schema-selected scalar, hash, string, and vector values in little-endian form.
 - `FcbArchiveMutationDryRunService` rebuilds a temporary FAT/DAT pair, re-extracts the changed payload, and verifies untouched entries plus the complete source DAT prefix.
 - `FcbArchiveMutationCopyService` requires a successful dry-run, reproduces the same payload hash, publishes a new archive pair, and independently re-extracts the result before success.
-- `FatV10ArchivePatchApplyService` executes optional semantic validation after publication while rollback files still exist; validation failures restore both original archive files.
+- `FatV10ArchivePatchApplyService` re-extracts and hashes every published replacement, then executes optional semantic validation while rollback files still exist; validation failures restore both original archive files.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 

@@ -56,6 +56,7 @@ public static class FatV10ArchivePatchApplyService
                 rollbackFatPath,
                 rollbackDatPath,
                 fileBuild.Build,
+                replacements,
                 validatePublishedAsync,
                 cancellationToken).ConfigureAwait(false);
             publicationSucceeded = true;
@@ -79,6 +80,7 @@ public static class FatV10ArchivePatchApplyService
         string rollbackFatPath,
         string rollbackDatPath,
         FatV10ArchivePatchBuildResult expected,
+        IReadOnlyDictionary<int, StagedReplacement> replacements,
         Func<ArchivePair, CancellationToken, Task> validatePublishedAsync,
         CancellationToken cancellationToken)
     {
@@ -98,6 +100,10 @@ public static class FatV10ArchivePatchApplyService
             File.Move(built.FatPath, target.FatPath, false);
             builtFatMoved = true;
             ValidatePublishedPair(target, expected);
+            await FatV10PublishedReplacementValidator.ValidateAsync(
+                target,
+                replacements,
+                cancellationToken).ConfigureAwait(false);
             await validatePublishedAsync(target, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
