@@ -108,8 +108,14 @@ No size-compatible candidate is selected automatically. Real entry 93 exposes `S
 
 `FcbValueMutator.ReplaceInlineField` requires complete source schema coverage, verifies replacement compatibility with the exact pair codec, clones graph identity, propagates inline-value changes through backward references, and accepts the result only after serialize/reparse stability and a second complete coverage audit.
 
-Referenced fields cannot be replaced independently. The raw file-writing CLI remains disabled.
+Referenced fields cannot be replaced independently.
+
+## Atomic mutation CLI — 2026-08-22
+
+`fcb mutate` requires node and field indexes plus expected type and field hashes. Values are encoded by the schema-selected codec, input and existing outputs cannot be overwritten, and the verified result is published through a same-directory temporary file followed by an atomic move.
+
+Real entry 93 was copied and `E7046466:723A4D89` (`SpawnThreadSafe`) was changed to `true`. The output retained complete 6/6 schema coverage and passed byte-exact read/write verification with SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`. A repeated command targeting the same output was rejected without overwrite.
 
 ## Next gate
 
-Add an atomic CLI command that writes a schema-gated mutation to a new FCB file without overwriting input or existing output. Validate it on a copied archive before integrating mutation with FAT/DAT rebuilding.
+Integrate the verified FCB output with FAT/DAT rebuilding through an explicit dry-run workflow. Keep live archive mutation behind copied-archive validation and expected resource-hash confirmation.

@@ -43,6 +43,7 @@ internal static class Program
           dunia fcb dump <input.fcb> --schema <schema.txt> [--names <names.txt>] [--values]
           dunia fcb audit <input.fcb> <names.txt>
           dunia fcb schema-audit <input.fcb> <schema.txt>
+          dunia fcb mutate <input.fcb> <output.fcb> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb discover <input.fcb> <candidate-binary>
           dunia fcb archive-audit <archive.fat> <names.txt>
           dunia fcb archive-discover <archive.fat> <candidate-binary>
@@ -175,6 +176,25 @@ internal static class Program
         if (args is ["fcb", "schema-audit", var schemaFcbPath, var schemaAuditPath])
         {
             return AuditFcbValueSchema(schemaFcbPath, schemaAuditPath);
+        }
+
+        if (args is [
+                "fcb", "mutate", var mutationInputPath, var mutationOutputPath, var mutationSchemaPath,
+                var rawNodeIndex, var rawFieldIndex, var rawTypeHash, var rawFieldHash, var mutationValue]
+            && TryParseEntryIndex(rawNodeIndex, out int nodeIndex)
+            && TryParseEntryIndex(rawFieldIndex, out int fieldIndex)
+            && TryParseFcbHash(rawTypeHash, out uint expectedTypeHash)
+            && TryParseFcbHash(rawFieldHash, out uint expectedFieldHash))
+        {
+            return MutateFcb(
+                mutationInputPath,
+                mutationOutputPath,
+                mutationSchemaPath,
+                nodeIndex,
+                fieldIndex,
+                expectedTypeHash,
+                expectedFieldHash,
+                mutationValue);
         }
 
         if (args is ["fcb", "discover", var discoveryFcbPath, var candidateBinaryPath])
@@ -543,6 +563,105 @@ internal static class Program
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
+        }
+    }
+
+    private static int MutateFcb(
+        string inputPath,
+        string outputPath,
+        string schemaPath,
+        int nodeIndex,
+        int fieldIndex,
+        uint expectedTypeHash,
+        uint expectedFieldHash,
+        string value)
+    {
+        string? temporaryPath = null;
+        try
+        {
+            string fullInputPath = Path.GetFullPath(inputPath);
+            string fullOutputPath = Path.GetFullPath(outputPath);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(fullInputPath, fullOutputPath, comparison))
+            {
+                throw new ArgumentException("Input and output paths must be different.");
+            }
+
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            string? directory = Path.GetDirectoryName(fullOutputPath);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException("FCB output directory does not exist.");
+            }
+
+            using FileStream input = File.OpenRead(fullInputPath);
+            FcbDocument document = FcbReader.Read(input);
+            IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
+            if ((uint)nodeIndex >= (uint)nodes.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(nodeIndex), "FCB node index is out of range.");
+            }
+
+            FcbNode node = nodes[nodeIndex];
+            if ((uint)fieldIndex >= (uint)node.Fields.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(fieldIndex), "FCB field index is out of range.");
+            }
+
+            FcbField field = node.Fields[fieldIndex];
+            if (node.TypeHash != expectedTypeHash || field.NameHash != expectedFieldHash)
+            {
+                throw new InvalidDataException(FormattableString.Invariant(
+                    $"FCB identity mismatch: actual={node.TypeHash:X8}:{field.NameHash:X8}."));
+            }
+
+            FcbValueSchema schema = LoadFcbValueSchema(schemaPath);
+            if (!schema.TryResolve(node.TypeHash, field.NameHash, out FcbValueKind codec))
+            {
+                throw new InvalidDataException("Target field has no schema codec.");
+            }
+
+            byte[] replacement = FcbValueEncoder.Encode(codec, value);
+            FcbValueMutationResult result = FcbValueMutator.ReplaceInlineField(
+                document,
+                field,
+                replacement,
+                schema);
+
+            temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullOutputPath)}.{Guid.NewGuid():N}.tmp");
+            using (var output = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                output.Write(result.Data.Span);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            Console.WriteLine($"output={fullOutputPath}");
+            Console.WriteLine(FormattableString.Invariant($"field={nodeIndex}.{fieldIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"identity={node.TypeHash:X8}:{field.NameHash:X8}"));
+            Console.WriteLine($"codec={result.Codec}");
+            Console.WriteLine($"value={value}");
+            Console.WriteLine($"sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(result.Data.Span))}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
         }
     }
 
@@ -1141,6 +1260,19 @@ internal static class Program
 
         return span.Length is > 0 and <= 16
             && ulong.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
+    }
+
+    private static bool TryParseFcbHash(string value, out uint hash)
+    {
+        hash = 0;
+        ReadOnlySpan<char> span = value.AsSpan();
+        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            span = span[2..];
+        }
+
+        return span.Length == 8
+            && uint.TryParse(span, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out hash);
     }
 
     private static bool TryParseEntryIndex(string value, out int index) =>

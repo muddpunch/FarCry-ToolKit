@@ -94,7 +94,7 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | Archive-wide FCB analysis and name discovery | Implemented; validated across real `common.fat` |
 | Read-only FCB typed value projections | Implemented; ambiguity and evidence are explicit |
 | External FCB value schema and coverage gate | Implemented; real entry 93 resolves 6/6 fields |
-| Schema-gated FCB field mutation | Implemented in the format library; file-writing CLI intentionally disabled |
+| Schema-gated FCB field mutation | Implemented in the format library and atomic write-new CLI |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -154,6 +154,7 @@ Warnings are treated as errors.
 - `FcbValueSchema` maps exact `(node type hash, field hash)` pairs to codecs and rejects malformed or conflicting definitions.
 - `FcbTypedValueProjector` resolves only schema-selected compatible candidates; `FcbValueSchemaCoverageAnalyzer` blocks incomplete or incompatible schemas.
 - `FcbValueMutator` clones the graph, updates inline values and their references, then requires schema coverage and byte-exact serialize/reparse stability.
+- `FcbValueEncoder` canonically encodes schema-selected scalar, hash, string, and vector values in little-endian form.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 
@@ -224,9 +225,11 @@ Inspect an FCB using explicit CRC32 names and typed codecs, then require complet
 ```powershell
 dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.fc5.txt" --schema "data\fcb-schema.fc5.txt" --values
 dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
+dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 ```
 
 Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
+`fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
 
 ## Correctness requirements
 
