@@ -3,7 +3,8 @@
 ## Confirmed
 
 - Dunia archive indexes use a FAT/DAT pair.
-- The original zlib-licensed Gibbed implementation identifies the format with `FAT2`, exposes `Big.Entry` and `Big.SubFatEntry`, and supports archive versions through v9.
+- The legacy zlib-licensed `Gibbed.Dunia2` implementation identifies the format with `FAT2`, exposes `Big.Entry` and `Big.SubFatEntry`, and supports archive versions through v9.
+- The newer zlib-licensed `Gibbed.Dunia` repository explicitly supports FC5 and defines the FAT v10 20-byte entry layout used as the implementation reference.
 - FCBConverter documentation identifies v9 with FC3/FC4 and v10 with FC5/FCND.
 - FCBConverter and FC5ArchiveViewer are GPLv3. Their code and bundled name/hash data must not be copied into a permissive toolkit.
 
@@ -16,7 +17,7 @@
 
 ## Acceptance gate
 
-Archive parsing starts only after two independent tools produce matching extracted byte hashes for the selected fixtures. Fixtures derived from game files stay local and are never committed.
+Metadata parsing may proceed from the confirmed zlib-licensed serializer layout and local bounds validation. Payload extraction and archive writes remain gated on matching extracted byte hashes from independent tools. Fixtures derived from game files stay local and are never committed.
 
 ## Local FC5 validation — 2026-08-22
 
@@ -40,6 +41,8 @@ Local fixture fingerprints:
 | `common.fat` | 68,052 | 3,401 | `7BFF1EF1FA6175F36DBC2546A1FFE5B499DEC70845879472686AE359E72DDDD8` |
 
 Full metadata decoding of `common.fat` produced 3,198 LZ4 entries, 203 uncompressed entries, zero encrypted entries, and zero payload ranges outside `common.dat`.
+
+The implemented `FatV10IndexReader` subsequently parsed every entry in all 16 local indexes and validated every payload range against its adjacent `.dat`; all 16 passed.
 
 No game-derived bytes are stored in this repository.
 

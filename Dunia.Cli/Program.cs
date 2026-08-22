@@ -1,3 +1,5 @@
+using System.Globalization;
+using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Archives.Recon;
 using Dunia.Formats.Textures;
@@ -25,6 +27,10 @@ internal static class Program
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
+
+        Archive operations:
+          dunia probe <archive.fat>
+          dunia list <archive.fat> [--limit N]
         """;
 
     public static async Task<int> Main(string[] args)
@@ -40,6 +46,18 @@ internal static class Program
             return Probe(fatPath);
         }
 
+        if (args is ["list", var listFatPath])
+        {
+            return ListEntries(listFatPath, 100);
+        }
+
+        if (args is ["list", var limitedFatPath, "--limit", var rawLimit]
+            && int.TryParse(rawLimit, NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
+            && limit > 0)
+        {
+            return ListEntries(limitedFatPath, limit);
+        }
+
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
@@ -47,6 +65,43 @@ internal static class Program
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
         return 2;
+    }
+
+    private static int ListEntries(string fatPath, int limit)
+    {
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            long datLength = new FileInfo(pair.DatPath).Length;
+
+            using FileStream input = File.OpenRead(pair.FatPath);
+            FatV10Index index = FatV10IndexReader.Read(input, datLength);
+
+            Console.WriteLine("index\thash\toffset\tstored\tuncompressed\tcompression\tencrypted");
+            int shown = Math.Min(index.Entries.Count, limit);
+            for (int i = 0; i < shown; i++)
+            {
+                FatV10Entry entry = index.Entries[i];
+                string compression = entry.CompressionScheme switch
+                {
+                    FatV10CompressionScheme.None => "none",
+                    FatV10CompressionScheme.Lz4 => "lz4",
+                    _ => throw new InvalidDataException($"Unsupported compression scheme: {entry.CompressionScheme}.")
+                };
+
+                Console.WriteLine(FormattableString.Invariant(
+                    $"{i}\t{entry.NameHash:X16}\t{entry.Offset}\t{entry.StoredSize}\t{entry.UncompressedSize}\t{compression}\t{entry.IsEncrypted.ToString().ToLowerInvariant()}"));
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"shown={shown}"));
+            Console.WriteLine(FormattableString.Invariant($"total={index.Entries.Count}"));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
     }
 
     private static int Probe(string fatPath)
