@@ -6,4 +6,4 @@ obj/
 *.suo
 TestResults/
 artifacts/
-
+.manual-game-test-*/

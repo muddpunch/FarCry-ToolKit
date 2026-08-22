@@ -50,6 +50,7 @@ internal static class Program
           dunia fcb archive-discover <archive.fat> <candidate-binary> --output <names.txt>
           dunia fcb archive-mutate-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
           dunia fcb archive-mutate-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
+          dunia fcb archive-mutate-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <schema.txt> <node-index> <field-index> <type-hash> <field-hash> <value>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -267,6 +268,30 @@ internal static class Program
                 expectedCopyTypeHash,
                 expectedCopyFieldHash,
                 copyValue).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "archive-mutate-apply", var applyArchivePath, "--confirm-write",
+                var rawApplyEntryIndex, var rawApplyResourceHash, var applySchemaPath,
+                var rawApplyNodeIndex, var rawApplyFieldIndex, var rawApplyTypeHash,
+                var rawApplyFieldHash, var applyValue]
+            && TryParseEntryIndex(rawApplyEntryIndex, out int applyEntryIndex)
+            && TryParseResourceHash(rawApplyResourceHash, out ulong expectedApplyResourceHash)
+            && TryParseEntryIndex(rawApplyNodeIndex, out int applyNodeIndex)
+            && TryParseEntryIndex(rawApplyFieldIndex, out int applyFieldIndex)
+            && TryParseFcbHash(rawApplyTypeHash, out uint expectedApplyTypeHash)
+            && TryParseFcbHash(rawApplyFieldHash, out uint expectedApplyFieldHash))
+        {
+            return await ApplyFcbArchiveMutationAsync(
+                applyArchivePath,
+                applyEntryIndex,
+                expectedApplyResourceHash,
+                applySchemaPath,
+                applyNodeIndex,
+                applyFieldIndex,
+                expectedApplyTypeHash,
+                expectedApplyFieldHash,
+                applyValue).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -976,6 +1001,54 @@ internal static class Program
             Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
             Console.WriteLine($"payload.sha256={result.PayloadSha256}");
             Console.WriteLine($"payload.exact={result.PayloadExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ApplyFcbArchiveMutationAsync(
+        string archivePath,
+        int entryIndex,
+        ulong expectedResourceHash,
+        string schemaPath,
+        int nodeIndex,
+        int fieldIndex,
+        uint expectedTypeHash,
+        uint expectedFieldHash,
+        string value)
+    {
+        try
+        {
+            FcbArchiveMutationApplyResult result = await FcbArchiveMutationApplyService.ApplyAsync(
+                ArchivePair.FromIndex(archivePath),
+                entryIndex,
+                expectedResourceHash,
+                LoadFcbValueSchema(schemaPath),
+                nodeIndex,
+                fieldIndex,
+                expectedTypeHash,
+                expectedFieldHash,
+                value,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("applied=true");
+            Console.WriteLine($"fat.target={result.TargetPair.FatPath}");
+            Console.WriteLine($"dat.target={result.TargetPair.DatPath}");
+            Console.WriteLine(FormattableString.Invariant($"entry={result.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"resource.hash={result.ResourceNameHash:X16}"));
+            Console.WriteLine($"codec={result.Codec}");
+            Console.WriteLine(FormattableString.Invariant($"payload.length={result.PayloadLength}"));
+            Console.WriteLine($"payload.sha256={result.PayloadSha256}");
+            Console.WriteLine($"semantic.verified={result.SemanticVerified.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+            Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
+            Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+            Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
+            Console.WriteLine($"backup.created={result.Backup.CreatedAny.ToString().ToLowerInvariant()}");
             Console.WriteLine("verified=true");
             return 0;
         }

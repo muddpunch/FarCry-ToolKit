@@ -58,7 +58,7 @@ patch.dat          -> patch.dat.original
 
 An existing `.original` file is never overwritten. Backup publication is atomic, concurrent calls create exactly one backup, and temporary files are removed after success, failure, or cancellation.
 
-In-place CLI writes remain disabled until archives containing replacements are independently validated. No-change FAT/DAT rebuilding now passes byte-exact SHA-256 round-trips against real empty and compressed FC5 archive pairs.
+In-place CLI writes require an explicit `--confirm-write`, expected resource hashes, verified `.original` backups, post-publication validation, and rollback on any failure. The game must be closed before invoking a write command.
 
 ## Current status
 
@@ -97,6 +97,7 @@ In-place CLI writes remain disabled until archives containing replacements are i
 | Schema-gated FCB field mutation | Implemented in the format library and atomic write-new CLI |
 | FCB mutation FAT/DAT dry-run | Implemented; validated against real `common.fat` entry 93 |
 | Verified FCB mutation archive copy | Implemented; source remains read-only and destination must be new |
+| Confirmed in-place FCB archive mutation | Implemented after successful game-load validation; requires `--confirm-write` |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
@@ -233,12 +234,14 @@ dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.
 dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
+dotnet run --project Dunia.Cli -- fcb archive-mutate-apply "common.fat" --confirm-write 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
 ```
 
 Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
 `fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
 `fcb archive-mutate-dry-run` additionally requires the expected 64-bit resource hash and deletes its rebuilt pair after end-to-end verification.
 `fcb archive-mutate-copy` repeats that verification before publishing a separate FAT/DAT pair and refuses existing destination files.
+`fcb archive-mutate-apply` additionally creates immutable `.original` backups, re-extracts and hashes the published replacement, reparses and schema-audits the FCB, then rolls back both archive files on any mismatch, exception, or cancellation.
 
 ## Correctness requirements
 

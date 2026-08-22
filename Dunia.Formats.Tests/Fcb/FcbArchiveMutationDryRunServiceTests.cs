@@ -91,6 +91,75 @@ public sealed class FcbArchiveMutationDryRunServiceTests : IDisposable
         Assert.Equal<byte>([0], FcbReader.Read(payload).Root.Fields[0].Data.ToArray());
     }
 
+    [Fact]
+    public async Task ApplyAsyncBacksUpPublishesAndSemanticallyVerifiesMutation()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        byte[] originalData = [.. fcb, 0xAA, 0xBB];
+        ArchivePair target = CreateArchive(fcb.Length, originalData);
+        byte[] originalFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        FcbArchiveMutationApplyResult result = await FcbArchiveMutationApplyService.ApplyAsync(
+            target,
+            0,
+            0x0123456789ABCDEF,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "false",
+            directory,
+            token);
+
+        Assert.True(result.SemanticVerified);
+        Assert.True(result.Backup.CreatedAny);
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath + ".original", token));
+        Assert.Equal(originalData, await File.ReadAllBytesAsync(target.DatPath + ".original", token));
+        using FileStream fat = File.OpenRead(target.FatPath);
+        FatV10Entry outputEntry = FatV10IndexReader.Read(
+            fat,
+            new FileInfo(target.DatPath).Length).Entries[0];
+        await using FileStream data = File.OpenRead(target.DatPath);
+        await using var payload = new MemoryStream();
+        await FatV10PayloadExtractor.ExtractAsync(data, outputEntry, payload, token);
+        payload.Position = 0;
+        Assert.Equal<byte>([0], FcbReader.Read(payload).Root.Fields[0].Data.ToArray());
+        Assert.Empty(Directory.EnumerateFiles(directory, "*.rollback-*.tmp"));
+    }
+
+    [Fact]
+    public async Task ApplyAsyncRejectsResourceMismatchBeforeCreatingBackups()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        byte[] fcb = CreateBooleanFcb(true);
+        ArchivePair target = CreateArchive(fcb.Length, fcb);
+        byte[] originalFat = await File.ReadAllBytesAsync(target.FatPath, token);
+        using var schemaInput = new StringReader("00000010 00000020 Boolean\n");
+        FcbValueSchema schema = FcbValueSchema.Load(schemaInput);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => FcbArchiveMutationApplyService.ApplyAsync(
+            target,
+            0,
+            0,
+            schema,
+            0,
+            0,
+            0x10,
+            0x20,
+            "false",
+            directory,
+            token));
+
+        Assert.Equal(originalFat, await File.ReadAllBytesAsync(target.FatPath, token));
+        Assert.Equal(fcb, await File.ReadAllBytesAsync(target.DatPath, token));
+        Assert.False(File.Exists(target.FatPath + ".original"));
+        Assert.False(File.Exists(target.DatPath + ".original"));
+    }
+
     public void Dispose() => Directory.Delete(directory, true);
 
     private ArchivePair CreateArchive(int fcbLength, byte[] data)

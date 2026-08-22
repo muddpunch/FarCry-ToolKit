@@ -128,6 +128,14 @@ Real `common.fat` entry 93 passed with `payload.exact=true`, `entries.untouched=
 
 A real copy built from `common.fat` entry 93 passed independent extraction, complete 6/6 schema coverage, and byte-exact FCB verification. `SpawnThreadSafe` resolved to `true`; payload SHA-256 remained `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`.
 
+## Manual game-load validation — 2026-08-23
+
+The verified `common.fat/common.dat` copy containing the entry 93 mutation completed the user-run Far Cry 5 load test without a reported archive error or crash. The test harness restored both original files afterward. The published payload remained 120 bytes with SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`.
+
+## Confirmed in-place FCB apply — 2026-08-23
+
+`fcb archive-mutate-apply` is gated by the literal `--confirm-write`, expected resource/type/field hashes, complete schema coverage, and a successful archive dry-run. It creates verified `.original` backups before publication. While rollback files still exist, it re-extracts and SHA-256-validates the staged replacement, requires exact mutated payload bytes, reparses the FCB, verifies the encoded target value and full schema coverage, and requires byte-exact FCB serialization. Any mismatch, exception, or cancellation restores both originals.
+
 ## Next gate
 
-Perform a manual game-load test using the copied pair. `FatV10ArchivePatchApplyService` now re-extracts and SHA-256-validates every staged replacement before running an asynchronous semantic validator while both rollback files still exist; mismatches, exceptions, and cancellation restore both originals. Keep in-place FCB mutation unavailable until the manual test succeeds.
+Exercise the confirmed in-place command against the local archive with the game closed, verify a second game load, then restore from the immutable `.original` pair before expanding mutation coverage beyond the validated entry 93 field.

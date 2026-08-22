@@ -44,6 +44,7 @@ public static class FcbArchiveMutationCopyService
         byte[] mutation = await CreateMutationAsync(
             source,
             entryIndex,
+            expectedResourceNameHash,
             schema,
             nodeIndex,
             fieldIndex,
@@ -137,9 +138,10 @@ public static class FcbArchiveMutationCopyService
         }
     }
 
-    private static async Task<byte[]> CreateMutationAsync(
+    internal static async Task<byte[]> CreateMutationAsync(
         ArchivePair source,
         int entryIndex,
+        ulong expectedResourceNameHash,
         FcbValueSchema schema,
         int nodeIndex,
         int fieldIndex,
@@ -154,13 +156,34 @@ public static class FcbArchiveMutationCopyService
             index = FatV10IndexReader.Read(fat, new FileInfo(source.DatPath).Length);
         }
 
+        if ((uint)entryIndex >= (uint)index.Entries.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(entryIndex), "Archive entry index is out of range.");
+        }
+
         FatV10Entry entry = index.Entries[entryIndex];
+        if (entry.NameHash != expectedResourceNameHash)
+        {
+            throw new InvalidDataException("Resource identity changed after dry-run.");
+        }
+
         await using var data = File.OpenRead(source.DatPath);
         await using var payload = new MemoryStream(checked((int)entry.UncompressedSize));
         await FatV10PayloadExtractor.ExtractAsync(data, entry, payload, cancellationToken).ConfigureAwait(false);
         payload.Position = 0;
         FcbDocument document = FcbReader.Read(payload);
-        FcbNode node = FcbGraph.GetUniqueNodes(document)[nodeIndex];
+        IReadOnlyList<FcbNode> nodes = FcbGraph.GetUniqueNodes(document);
+        if ((uint)nodeIndex >= (uint)nodes.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(nodeIndex), "FCB node index is out of range.");
+        }
+
+        FcbNode node = nodes[nodeIndex];
+        if ((uint)fieldIndex >= (uint)node.Fields.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fieldIndex), "FCB field index is out of range.");
+        }
+
         FcbField field = node.Fields[fieldIndex];
         if (node.TypeHash != expectedTypeHash || field.NameHash != expectedFieldHash
             || !schema.TryResolve(node.TypeHash, field.NameHash, out FcbValueKind codec))
