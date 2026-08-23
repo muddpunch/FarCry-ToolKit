@@ -6,6 +6,7 @@ using Dunia.Formats.Archives.Recon;
 using Dunia.Formats.Changes;
 using Dunia.Formats.Fcb;
 using Dunia.Formats.Hashing;
+using Dunia.Formats.Meshes;
 using Dunia.Formats.Textures;
 
 namespace Dunia.Cli;
@@ -24,6 +25,7 @@ internal static class Program
           entry     Inspect an archive entry
           get       Extract an archive entry
           tex       Texture operations
+          mesh      Mesh operations
           pack      Pack changed resources
           rebuild   Rebuild an archive pair
           refs      Resolve resource references
@@ -32,6 +34,9 @@ internal static class Program
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
+
+        Mesh operations:
+          dunia mesh probe <input.xbg>
 
         FCB operations:
           dunia fcb probe <input.fcb>
@@ -147,6 +152,11 @@ internal static class Program
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
+        }
+
+        if (args is ["mesh", "probe", var xbgPath])
+        {
+            return ProbeXbg(xbgPath);
         }
 
         if (args is ["fcb", "probe", var fcbPath])
@@ -2322,6 +2332,35 @@ internal static class Program
                 Console.WriteLine($"entries.lz4={index.Entries.Count(entry => entry.CompressionScheme == FatV10CompressionScheme.Lz4)}");
                 Console.WriteLine($"entries.encrypted={index.Entries.Count(entry => entry.IsEncrypted)}");
                 Console.WriteLine($"dat.bounds.valid={datLength.HasValue}");
+            }
+
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int ProbeXbg(string xbgPath)
+    {
+        try
+        {
+            using FileStream input = File.OpenRead(xbgPath);
+            XbgSummary summary = XbgSummaryReader.Read(input);
+            Console.WriteLine($"path={Path.GetFullPath(xbgPath)}");
+            Console.WriteLine($"version=0x{summary.Version:X8}");
+            Console.WriteLine($"resource.hash=0x{summary.ResourceHash:X8}");
+            Console.WriteLine($"file.size={summary.FileSize}");
+            Console.WriteLine($"declared.size={summary.DeclaredSize}");
+            Console.WriteLine($"materials={summary.MaterialCount}");
+            Console.WriteLine($"lods={summary.LodCount}");
+            Console.WriteLine($"chunks={summary.Chunks.Count}");
+            foreach (XbgChunkInfo chunk in summary.Chunks)
+            {
+                Console.WriteLine(
+                    $"chunk={chunk.Name} offset=0x{chunk.Offset:X} size={chunk.ChunkSize} data={chunk.DataSize}");
             }
 
             return 0;

@@ -4,14 +4,353 @@
         Title="Dunia Toolkit"
         Width="1200"
         Height="760"
-        MinWidth="800"
-        MinHeight="500"
-        WindowStartupLocation="CenterScreen">
-    <Grid>
-        <TextBlock HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   FontSize="20"
-                   Text="Dunia Toolkit" />
-    </Grid>
-</Window>
+        MinWidth="900"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI"
+        Background="#101010"
+        Foreground="#F2F2F2"
+        AllowDrop="True"
+        DragOver="WindowDragOver"
+        Drop="WindowDrop">
+    <Window.Resources>
+        <SolidColorBrush x:Key="WindowBrush" Color="#101010" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#181818" />
+        <SolidColorBrush x:Key="ControlBrush" Color="#242424" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#3C3C3C" />
+        <SolidColorBrush x:Key="TextBrush" Color="#F2F2F2" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#A6A6A6" />
 
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="Menu">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="ToolBarTray">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+        </Style>
+        <Style TargetType="ToolBar">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource ControlBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource ControlBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+        <Style TargetType="StatusBar">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="StatusBarItem">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style TargetType="GroupBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource ControlBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="{StaticResource WindowBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#2E5D87" />
+                    <Setter Property="Foreground" Value="White" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem x:Name="SelectGameExecutableMenuItem" Header="Select _FarCry5.exe..." Click="SelectGameExecutableClick" />
+                <Separator />
+                <MenuItem Header="_Open archive..." InputGestureText="Ctrl+O" Click="OpenArchiveClick" />
+                <MenuItem Header="Load _name list..." InputGestureText="Ctrl+L" Click="LoadNamesClick" />
+                <MenuItem x:Name="DiscoverNamesMenuItem" Header="_Discover names..." Click="DiscoverNamesClick" IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="ExitClick" />
+            </MenuItem>
+        </Menu>
+
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar>
+                <Button Padding="10,2" Click="OpenArchiveClick" AutomationProperties.Name="Open FAT archive">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Margin="0,0,6,0" FontFamily="Segoe MDL2 Assets" Text="&#xE8E5;" />
+                        <TextBlock Text="Open archive" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="LoadNamesButton" Padding="10,2" Click="LoadNamesClick" AutomationProperties.Name="Load resource name list">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Margin="0,0,6,0" FontFamily="Segoe MDL2 Assets" Text="&#xE8A5;" />
+                        <TextBlock Text="Load names" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="DiscoverNamesButton" Padding="10,2" Click="DiscoverNamesClick" IsEnabled="False"
+                        AutomationProperties.Name="Discover embedded resource names from DAT and game executable">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Margin="0,0,6,0" FontFamily="Segoe MDL2 Assets" Text="&#xE721;" />
+                        <TextBlock Text="Discover names" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="CancelButton" Padding="10,2" Click="CancelClick" Visibility="Collapsed" Content="Cancel" />
+                <Separator />
+                <TextBlock Margin="6,0" VerticalAlignment="Center" Text="Filter:" />
+                <TextBox x:Name="SearchBox"
+                         Width="280"
+                         Margin="0,2,6,2"
+                         VerticalContentAlignment="Center"
+                         ToolTip="Filter by index, hash, compression or flags (Ctrl+F)"
+                         TextChanged="SearchTextChanged"
+                         AutomationProperties.Name="Filter archive entries" />
+                <ProgressBar x:Name="LoadingProgress"
+                             Width="120"
+                             Height="4"
+                             Margin="8,0"
+                             IsIndeterminate="True"
+                             Visibility="Collapsed" />
+                <Separator />
+                <Button x:Name="PreviousPageButton" Padding="8,2" Click="PreviousPageClick" IsEnabled="False" Content="Previous" />
+                <TextBlock x:Name="PageText" Margin="8,0" VerticalAlignment="Center" Text="Page 1 / 1" />
+                <Button x:Name="NextPageButton" Padding="8,2" Click="NextPageClick" IsEnabled="False" Content="Next" />
+            </ToolBar>
+        </ToolBarTray>
+
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="Read-only browser" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Padding="14,10" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock x:Name="ArchiveTitle" FontSize="18" FontWeight="SemiBold" Text="No archive open" />
+                        <TextBlock x:Name="ArchivePathText" Margin="0,3,0,0" Foreground="{StaticResource MutedTextBrush}"
+                                   Text="Open or drop a .fat file to begin" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Text="Entries:" />
+                        <TextBlock x:Name="EntryCountText" Margin="5,0,18,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="-" />
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Text="DAT size:" />
+                        <TextBlock x:Name="DatSizeText" Margin="5,0,18,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="-" />
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Text="Format:" />
+                        <TextBlock x:Name="FormatText" Margin="5,0,18,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="-" />
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Text="EXE:" />
+                        <TextBlock x:Name="GameExecutableText" Margin="5,0,18,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="-" />
+                        <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Text="Names:" />
+                        <TextBlock x:Name="NameCoverageText" Margin="5,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Text="not loaded" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="500" />
+                    <ColumnDefinition Width="5" />
+                    <ColumnDefinition Width="300" MinWidth="240" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
+                    <DataGrid x:Name="EntriesGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              SelectionMode="Single"
+                              SelectionUnit="FullRow"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              Background="{StaticResource WindowBrush}"
+                              Foreground="{StaticResource TextBrush}"
+                              RowBackground="{StaticResource WindowBrush}"
+                              AlternatingRowBackground="#191919"
+                              HorizontalGridLinesBrush="{StaticResource BorderBrush}"
+                              BorderThickness="0"
+                              SelectionChanged="EntrySelectionChanged"
+                              AutomationProperties.Name="Archive entries">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="36">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Path Width="16"
+                                              Height="16"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Data="{Binding Icon}"
+                                              Stroke="#D8D8D8"
+                                              StrokeThickness="1.2"
+                                              StrokeLineJoin="Round"
+                                              Stretch="Uniform"
+                                              ToolTip="{Binding Type}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Width="70" Header="Index" Binding="{Binding Index}" />
+                            <DataGridTextColumn Width="2*" MinWidth="220" Header="Name / identifier" Binding="{Binding Name}" />
+                            <DataGridTextColumn Width="90" Header="Type" Binding="{Binding Type}" />
+                            <DataGridTextColumn Width="150" Header="Resource hash" Binding="{Binding Hash}" />
+                            <DataGridTextColumn Width="110" Header="Raw size" Binding="{Binding RawSize}" />
+                            <DataGridTextColumn Width="110" Header="Stored size" Binding="{Binding StoredSize}" />
+                            <DataGridTextColumn Width="100" Header="Compression" Binding="{Binding Compression}" />
+                            <DataGridTextColumn Width="80" Header="Flags" Binding="{Binding Flags}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <Border x:Name="EmptyState" Background="{StaticResource WindowBrush}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock HorizontalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="No archive open" />
+                            <TextBlock Margin="0,6,0,14" Foreground="{StaticResource MutedTextBrush}"
+                                       Text="Select a Far Cry 5 FAT archive to inspect its entries." />
+                            <Button Padding="14,5" HorizontalAlignment="Center" Click="OpenArchiveClick" Content="Open archive..." />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}" />
+
+                <Border Grid.Column="2" Padding="12" Background="{StaticResource PanelBrush}">
+                    <Grid>
+                        <TextBlock x:Name="InspectorEmpty" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{StaticResource MutedTextBrush}" Text="Select an entry to view details" />
+
+                        <StackPanel x:Name="InspectorPanel" Visibility="Collapsed">
+                            <TextBlock x:Name="SelectedIndexText" Margin="0,0,0,12" FontSize="16" FontWeight="SemiBold" />
+                            <GroupBox Header="Resource">
+                                <Grid Margin="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Name" />
+                                    <TextBlock x:Name="SelectedNameText" Grid.Column="1" Margin="0,0,0,8"
+                                               TextWrapping="Wrap" />
+
+                                    <TextBlock Grid.Row="1" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Name hash" />
+                                    <TextBlock x:Name="SelectedHashText" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8"
+                                               FontFamily="Consolas" TextTrimming="CharacterEllipsis" />
+
+                                    <TextBlock Grid.Row="2" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="DAT offset" />
+                                    <TextBlock x:Name="SelectedOffsetText" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" FontFamily="Consolas" />
+
+                                    <TextBlock Grid.Row="3" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Raw size" />
+                                    <TextBlock x:Name="SelectedRawSizeText" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" />
+
+                                    <TextBlock Grid.Row="4" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Stored size" />
+                                    <TextBlock x:Name="SelectedStoredSizeText" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" />
+
+                                    <TextBlock Grid.Row="5" Margin="0,0,12,0" Foreground="{StaticResource MutedTextBrush}" Text="Compression" />
+                                    <TextBlock x:Name="SelectedCompressionText" Grid.Row="5" Grid.Column="1" />
+                                </Grid>
+                            </GroupBox>
+
+                            <Button x:Name="InspectMeshButton"
+                                    Margin="0,12,0,0"
+                                    Padding="10,5"
+                                    HorizontalAlignment="Left"
+                                    Click="InspectMeshClick"
+                                    Content="Inspect mesh"
+                                    Visibility="Collapsed" />
+
+                            <Button x:Name="PreviewTextureButton"
+                                    Margin="0,12,0,0"
+                                    Padding="10,5"
+                                    HorizontalAlignment="Left"
+                                    Click="PreviewTextureClick"
+                                    Content="Preview texture"
+                                    Visibility="Collapsed" />
+
+                            <GroupBox x:Name="MeshSummaryGroup" Margin="0,12,0,0" Header="Mesh" Visibility="Collapsed">
+                                <Grid Margin="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Version" />
+                                    <TextBlock x:Name="MeshVersionText" Grid.Column="1" Margin="0,0,0,8" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="1" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="LODs" />
+                                    <TextBlock x:Name="MeshLodCountText" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" />
+                                    <TextBlock Grid.Row="2" Margin="0,0,12,8" Foreground="{StaticResource MutedTextBrush}" Text="Materials" />
+                                    <TextBlock x:Name="MeshMaterialCountText" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" />
+                                    <TextBlock Grid.Row="3" Margin="0,0,12,0" Foreground="{StaticResource MutedTextBrush}" Text="Chunks" />
+                                    <TextBlock x:Name="MeshChunkCountText" Grid.Row="3" Grid.Column="1" />
+                                </Grid>
+                            </GroupBox>
+
+                            <GroupBox x:Name="TexturePreviewGroup" Margin="0,12,0,0" Header="Texture" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <Border Height="240" Background="#0B0B0B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                        <Image x:Name="TexturePreviewImage"
+                                               Margin="4"
+                                               Stretch="Uniform"
+                                               SnapsToDevicePixels="True" />
+                                    </Border>
+                                    <TextBlock x:Name="TextureDimensionsText"
+                                               Margin="0,8,0,0"
+                                               HorizontalAlignment="Center"
+                                               Foreground="{StaticResource MutedTextBrush}" />
+                                </StackPanel>
+                            </GroupBox>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -47,6 +47,6 @@ public sealed class DuniaNameResolver
 
     public IReadOnlyList<string> Resolve(ulong hash) =>
         _names.TryGetValue(hash, out List<string>? candidates)
-            ? candidates.AsReadOnly()
+            ? candidates
             : Array.Empty<string>();
 }
