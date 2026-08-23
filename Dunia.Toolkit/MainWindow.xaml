@@ -298,7 +298,7 @@
                                     Padding="10,5"
                                     HorizontalAlignment="Left"
                                     Click="InspectMeshClick"
-                                    Content="Inspect mesh"
+                                    Content="Preview mesh"
                                     Visibility="Collapsed" />
 
                             <Button x:Name="PreviewTextureButton"

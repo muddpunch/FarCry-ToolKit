@@ -14,13 +14,14 @@ The project aims to provide one safe application for browsing, extracting, inspe
 - Extract individual files or complete archives.
 - Inspect and round-trip FCB (`FarCryBinary`) trees with hash-to-name resolution.
 - Preview `.xbt` textures and export their embedded DDS data.
+- Preview supported `.xbg` meshes and switch LODs in an interactive 3D viewport with orbit, pan, zoom, and keyboard controls.
 - Replace textures with automatic validation and conversion.
 - Stage modifications in memory before writing anything to disk.
 - Show every pending change and support explicit **Apply** or **Discard** actions.
 - Create permanent `.original` backups before the first archive write.
 - Expose the same core operations through a WPF application and CLI.
 
-Mesh viewing, FBX export, materials, weather, and time-of-day editing are research targets. They are not promised features until their FC5 formats are understood and verified.
+FBX export, material inspection, weather, and time-of-day editing remain research targets. Unsupported XBG layouts are rejected explicitly instead of rendering unverified geometry.
 
 ## How Dunia archives work
 
@@ -105,6 +106,8 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | Multi-entry FCB archive transaction API v1 | Implemented and contract-frozen for WPF integration |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
+| FC5 XBG geometry decoder | Implemented for validated multi-buffer layouts and every declared LOD; safety-gated |
+| WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
 | Remaining production CLI commands | Not implemented |
 | WPF archive browser | Not implemented |
@@ -173,6 +176,7 @@ Warnings are treated as errors.
 - `FatV10ArchiveRestoreService` validates immutable `.original` hashes, stages and validates the backup pair, then restores both files transactionally without deleting the backups.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
+- `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
 
 ## Archive inspection
 

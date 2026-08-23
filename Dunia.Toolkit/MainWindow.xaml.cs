@@ -609,7 +609,7 @@ public partial class MainWindow : Window, IDisposable
         SetBusy(true, "Reading mesh...");
         try
         {
-            XbgSummary summary;
+            XbgMeshPreview mesh;
             await using (var data = new FileStream(_datPath, new FileStreamOptions
             {
                 Mode = FileMode.Open,
@@ -621,15 +621,18 @@ public partial class MainWindow : Window, IDisposable
             {
                 await FatV10PayloadExtractor.ExtractAsync(data, entry.Entry, payload);
                 payload.Position = 0;
-                summary = XbgSummaryReader.Read(payload);
+                mesh = await Task.Run(() => XbgMeshPreviewReader.Read(payload));
             }
 
+            XbgSummary summary = mesh.Summary;
             MeshVersionText.Text = $"0x{summary.Version:X8}";
             MeshLodCountText.Text = summary.LodCount.ToString("N0", CultureInfo.CurrentCulture);
             MeshMaterialCountText.Text = summary.MaterialCount.ToString("N0", CultureInfo.CurrentCulture);
             MeshChunkCountText.Text = summary.Chunks.Count.ToString("N0", CultureInfo.CurrentCulture);
             MeshSummaryGroup.Visibility = Visibility.Visible;
-            StatusText.Text = $"Mesh validated: {summary.LodCount:N0} LODs, {summary.MaterialCount:N0} materials";
+            StatusText.Text = $"Mesh decoded: {mesh.Positions.Count:N0} vertices, {mesh.TriangleCount:N0} triangles";
+            var preview = new MeshPreviewWindow(mesh, entry.Name) { Owner = this };
+            preview.Show();
         }
         catch (Exception ex)
         {
@@ -676,12 +679,7 @@ public partial class MainWindow : Window, IDisposable
                 await XbtDdsExtractor.ExtractAsync(xbt, dds);
                 dds.Position = 0;
 
-                BitmapDecoder decoder = BitmapDecoder.Create(
-                    dds,
-                    BitmapCreateOptions.PreservePixelFormat,
-                    BitmapCacheOption.OnLoad);
-                bitmap = decoder.Frames[0];
-                bitmap.Freeze();
+                bitmap = await DdsBitmapDecoder.DecodeAsync(dds);
             }
 
             TexturePreviewImage.Source = bitmap;
@@ -821,7 +819,7 @@ public partial class MainWindow : Window, IDisposable
 
     private void ShowError(string message)
     {
-        StatusText.Text = "Failed to open archive";
+        StatusText.Text = "Operation failed";
         MessageBox.Show(this, message, "Dunia Toolkit", MessageBoxButton.OK, MessageBoxImage.Error);
     }
 
