@@ -58,6 +58,10 @@ internal static class Program
           dunia fcb archive-mutate-batch-dry-run <archive.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
           dunia fcb archive-mutate-batch-copy <source.fat> <output.fat> <entry-index> <resource-hash> <schema.txt> <mutations.tsv>
           dunia fcb archive-mutate-batch-apply <archive.fat> --confirm-write <entry-index> <resource-hash> <source-payload-sha256> <schema.txt> <mutations.tsv>
+          dunia fcb transaction-plan <archive.fat> <schema.txt> <transaction.tsv>
+          dunia fcb transaction-dry-run <archive.fat> <schema.txt> <transaction.tsv>
+          dunia fcb transaction-copy <source.fat> <output.fat> <schema.txt> <transaction.tsv>
+          dunia fcb transaction-apply <archive.fat> --confirm-write <plan-sha256> <schema.txt> <transaction.tsv>
 
         Archive operations:
           dunia probe <archive.fat>
@@ -401,6 +405,51 @@ internal static class Program
                 expectedBatchApplySourceSha256,
                 batchApplySchemaPath,
                 batchApplyMutationsPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "transaction-plan", var transactionPlanArchivePath,
+                var transactionPlanSchemaPath, var transactionPlanPath])
+        {
+            return await PlanFcbArchiveTransactionAsync(
+                transactionPlanArchivePath,
+                transactionPlanSchemaPath,
+                transactionPlanPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "transaction-dry-run", var transactionDryRunArchivePath,
+                var transactionDryRunSchemaPath, var transactionDryRunPath])
+        {
+            return await DryRunFcbArchiveTransactionAsync(
+                transactionDryRunArchivePath,
+                transactionDryRunSchemaPath,
+                transactionDryRunPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "transaction-copy", var transactionCopySourcePath,
+                var transactionCopyOutputPath, var transactionCopySchemaPath,
+                var transactionCopyPath])
+        {
+            return await CreateFcbArchiveTransactionCopyAsync(
+                transactionCopySourcePath,
+                transactionCopyOutputPath,
+                transactionCopySchemaPath,
+                transactionCopyPath).ConfigureAwait(false);
+        }
+
+        if (args is [
+                "fcb", "transaction-apply", var transactionApplyArchivePath, "--confirm-write",
+                var rawTransactionPlanSha256, var transactionApplySchemaPath,
+                var transactionApplyPath]
+            && TryParseSha256(rawTransactionPlanSha256, out string expectedTransactionPlanSha256))
+        {
+            return await ApplyFcbArchiveTransactionAsync(
+                transactionApplyArchivePath,
+                expectedTransactionPlanSha256,
+                transactionApplySchemaPath,
+                transactionApplyPath).ConfigureAwait(false);
         }
 
         if (args is ["hash", "compute", var resourcePath])
@@ -1466,6 +1515,146 @@ internal static class Program
         }
     }
 
+    private static async Task<int> PlanFcbArchiveTransactionAsync(
+        string archivePath,
+        string schemaPath,
+        string transactionPath)
+    {
+        try
+        {
+            FcbArchiveTransactionPlanResult result = await FcbArchiveTransactionService.PlanAsync(
+                ArchivePair.FromIndex(archivePath),
+                LoadFcbValueSchema(schemaPath),
+                LoadFcbArchiveTransaction(transactionPath)).ConfigureAwait(false);
+            Console.WriteLine("read-only=true");
+            Console.WriteLine("source.modified=false");
+            WriteFcbArchiveTransactionPlan(result);
+            Console.WriteLine("ready=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> DryRunFcbArchiveTransactionAsync(
+        string archivePath,
+        string schemaPath,
+        string transactionPath)
+    {
+        try
+        {
+            FcbArchiveTransactionDryRunResult result = await FcbArchiveTransactionService.DryRunAsync(
+                ArchivePair.FromIndex(archivePath),
+                LoadFcbValueSchema(schemaPath),
+                LoadFcbArchiveTransaction(transactionPath),
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("dry-run=true");
+            Console.WriteLine("source.modified=false");
+            WriteFcbArchiveTransactionPlan(result.Plan);
+            Console.WriteLine(FormattableString.Invariant(
+                $"replacement.entries={result.ReplacementEntryCount}"));
+            Console.WriteLine($"payloads.exact={result.PayloadsExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"entries.untouched={result.UntouchedEntriesExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"dat.prefix.exact={result.SourceDataPrefixExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"verified={result.IsVerified.ToString().ToLowerInvariant()}");
+            return result.IsVerified ? 0 : 4;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> CreateFcbArchiveTransactionCopyAsync(
+        string sourcePath,
+        string outputPath,
+        string schemaPath,
+        string transactionPath)
+    {
+        try
+        {
+            FcbArchiveTransactionCopyResult result = await FcbArchiveTransactionService.CreateCopyAsync(
+                ArchivePair.FromIndex(sourcePath),
+                ArchivePair.FromIndex(outputPath),
+                LoadFcbValueSchema(schemaPath),
+                LoadFcbArchiveTransaction(transactionPath),
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("source.modified=false");
+            Console.WriteLine($"fat.output={result.OutputPair.FatPath}");
+            Console.WriteLine($"dat.output={result.OutputPair.DatPath}");
+            WriteFcbArchiveTransactionPlan(result.Plan);
+            Console.WriteLine($"payloads.exact={result.PayloadsExact.ToString().ToLowerInvariant()}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ApplyFcbArchiveTransactionAsync(
+        string archivePath,
+        string expectedPlanSha256,
+        string schemaPath,
+        string transactionPath)
+    {
+        try
+        {
+            FcbArchiveTransactionApplyResult result = await FcbArchiveTransactionService.ApplyAsync(
+                ArchivePair.FromIndex(archivePath),
+                LoadFcbValueSchema(schemaPath),
+                LoadFcbArchiveTransaction(transactionPath),
+                expectedPlanSha256,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine($"applied={(!result.NoOp).ToString().ToLowerInvariant()}");
+            Console.WriteLine($"fat.target={result.TargetPair.FatPath}");
+            Console.WriteLine($"dat.target={result.TargetPair.DatPath}");
+            WriteFcbArchiveTransactionPlan(result.Plan);
+            Console.WriteLine($"semantic.verified={result.SemanticVerified.ToString().ToLowerInvariant()}");
+            Console.WriteLine($"backup.created={(result.Backup?.CreatedAny ?? false).ToString().ToLowerInvariant()}");
+            if (result.Backup is not null)
+            {
+                Console.WriteLine($"fat.backup={result.Backup.Fat.BackupPath}");
+                Console.WriteLine($"fat.backup.sha256={result.Backup.Fat.Sha256}");
+                Console.WriteLine($"dat.backup={result.Backup.Dat.BackupPath}");
+                Console.WriteLine($"dat.backup.sha256={result.Backup.Dat.Sha256}");
+            }
+
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static void WriteFcbArchiveTransactionPlan(FcbArchiveTransactionPlanResult plan)
+    {
+        Console.WriteLine(FormattableString.Invariant($"api.version={plan.ApiVersion}"));
+        Console.WriteLine(FormattableString.Invariant($"archive.entries={plan.ArchiveEntryCount}"));
+        Console.WriteLine(FormattableString.Invariant($"transaction.entries={plan.Entries.Count}"));
+        Console.WriteLine($"plan.sha256={plan.PlanSha256}");
+        Console.WriteLine($"no-op={plan.NoOp.ToString().ToLowerInvariant()}");
+        for (int i = 0; i < plan.Entries.Count; i++)
+        {
+            FcbArchiveBatchMutationPlanResult entry = plan.Entries[i];
+            Console.WriteLine(FormattableString.Invariant($"entry.{i}.index={entry.EntryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"entry.{i}.resource.hash={entry.ResourceNameHash:X16}"));
+            Console.WriteLine(FormattableString.Invariant($"entry.{i}.mutations={entry.Mutations.Count}"));
+            Console.WriteLine($"entry.{i}.payload.source.sha256={entry.SourcePayloadSha256}");
+            Console.WriteLine($"entry.{i}.payload.planned.sha256={entry.PlannedPayloadSha256}");
+            Console.WriteLine($"entry.{i}.no-op={entry.NoOp.ToString().ToLowerInvariant()}");
+        }
+    }
+
     private static void WriteFcbArchiveBatchPlan(FcbArchiveBatchMutationPlanResult plan)
     {
         Console.WriteLine(FormattableString.Invariant($"entry={plan.EntryIndex}"));
@@ -1963,6 +2152,65 @@ internal static class Program
         }
 
         return mutations;
+    }
+
+    private static List<FcbArchiveTransactionEntry> LoadFcbArchiveTransaction(string path)
+    {
+        var entries = new Dictionary<int, (ulong ResourceHash, List<FcbArchiveFieldMutation> Mutations)>();
+        int lineNumber = 0;
+        foreach (string line in File.ReadLines(path))
+        {
+            lineNumber++;
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed[0] is '#' or ';')
+            {
+                continue;
+            }
+
+            string[] columns = line.Split('\t');
+            if (columns.Length != 7 ||
+                !TryParseEntryIndex(columns[0].Trim(), out int entryIndex) ||
+                !TryParseResourceHash(columns[1].Trim(), out ulong resourceHash) ||
+                !TryParseEntryIndex(columns[2].Trim(), out int nodeIndex) ||
+                !TryParseEntryIndex(columns[3].Trim(), out int fieldIndex) ||
+                !TryParseFcbHash(columns[4].Trim(), out uint typeHash) ||
+                !TryParseFcbHash(columns[5].Trim(), out uint fieldHash))
+            {
+                throw new InvalidDataException(
+                    $"Invalid transaction record at line {lineNumber}; expected ENTRY<TAB>RESOURCE_HASH<TAB>NODE<TAB>FIELD<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE.");
+            }
+
+            if (!entries.TryGetValue(entryIndex, out var entry))
+            {
+                entry = (resourceHash, []);
+                entries.Add(entryIndex, entry);
+            }
+            else if (entry.ResourceHash != resourceHash)
+            {
+                throw new InvalidDataException(
+                    $"Conflicting resource hashes for archive entry {entryIndex} at line {lineNumber}.");
+            }
+
+            entry.Mutations.Add(new(
+                nodeIndex,
+                fieldIndex,
+                typeHash,
+                fieldHash,
+                FcbMutationTsvCodec.UnescapeValue(columns[6])));
+        }
+
+        if (entries.Count == 0)
+        {
+            throw new InvalidDataException("Transaction file contains no records.");
+        }
+
+        return entries
+            .OrderBy(pair => pair.Key)
+            .Select(pair => new FcbArchiveTransactionEntry(
+                pair.Key,
+                pair.Value.ResourceHash,
+                pair.Value.Mutations))
+            .ToList();
     }
 
     private static bool TryParseHash(string value, out ulong hash)

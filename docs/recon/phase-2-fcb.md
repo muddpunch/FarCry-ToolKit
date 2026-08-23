@@ -192,6 +192,12 @@ Generating a template from real `common.fat` entry 93 produced six editable reco
 
 Changing only the generated `SpawnThreadSafe` record to `true` produced planned payload SHA-256 `78F9322A533671022DEDF2B8BCF6F8BB8D911C6D9DC59C9C945A60E3DE20226D`. Batch dry-run passed payload, untouched-entry, and DAT-prefix verification. Batch copy produced FAT SHA-256 `EB57C1D0E3DAED85B3AE88E9CEA83B760AF0F18F9266174B83FD6C5F49672E8A` and DAT SHA-256 `A3CF0A8195B6AC43D93A78D8B7509BDCA22D3A9D9289D110885CC2BE9536B9D0`, byte-identical to the previously game-load-tested archive pair. The live game FAT/DAT lengths and timestamps remained unchanged.
 
+## Multi-entry archive transaction and API freeze — 2026-08-23
+
+`FcbArchiveTransactionService` API v1 generalizes mutation to multiple FCB entries. It canonicalizes entry and field order, produces one deterministic plan SHA-256 binding every source and planned payload, stages only changed entries, performs one dry-run rebuild, and publishes one copied or in-place archive transaction. Copy and Apply repeat the entire plan under the source FAT/DAT read lock. Confirmed Apply rejects a stale plan before backup or writes and validates every targeted payload, field, schema, and FCB round-trip before removing rollback files.
+
+A synthetic two-entry archive passes Plan, order-independent fixed plan hashing, one-rebuild Dry-run, Copy, permanent backup, transactional Apply, and semantic verification of both published entries. A reflection contract test freezes API version 1 and the exact four public facade signatures. The WPF layer must consume this facade rather than lower-level archive-writing services; the authoritative contract is [`../api/fcb-archive-transaction-v1.md`](../api/fcb-archive-transaction-v1.md).
+
 ## Next gate
 
-Generalize batch mutation from multiple fields in one FCB entry to multiple FCB entries committed in one archive rebuild and rollback transaction.
+Build the WPF shell against the frozen `FcbArchiveTransactionService` API v1 contract.
