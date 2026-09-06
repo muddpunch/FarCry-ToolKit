@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
 using Dunia.Formats.Hashing;
 using Dunia.Formats.Meshes;
@@ -568,6 +569,7 @@ public partial class MainWindow : Window, IDisposable
             InspectorEmpty.Visibility = Visibility.Visible;
             InspectMeshButton.Visibility = Visibility.Collapsed;
             PreviewTextureButton.Visibility = Visibility.Collapsed;
+            EditFcbButton.Visibility = Visibility.Collapsed;
             MeshSummaryGroup.Visibility = Visibility.Collapsed;
             TexturePreviewGroup.Visibility = Visibility.Collapsed;
             TexturePreviewImage.Source = null;
@@ -585,6 +587,11 @@ public partial class MainWindow : Window, IDisposable
         SelectedCompressionText.Text = entry.IsEncrypted ? $"{entry.Compression} / encrypted" : entry.Compression;
         InspectMeshButton.Visibility = entry.CanInspectMesh ? Visibility.Visible : Visibility.Collapsed;
         PreviewTextureButton.Visibility = entry.CanPreviewTexture ? Visibility.Visible : Visibility.Collapsed;
+        int selectedFcbCount = EntriesGrid.SelectedItems.OfType<ArchiveEntryRow>().Count(row => row.CanEditFcb);
+        EditFcbButton.Visibility = selectedFcbCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        EditFcbButton.Content = selectedFcbCount == 1
+            ? "Edit selected FCB fields..."
+            : $"Edit {selectedFcbCount:N0} selected FCB entries...";
         MeshSummaryGroup.Visibility = Visibility.Collapsed;
         TexturePreviewGroup.Visibility = Visibility.Collapsed;
         TexturePreviewImage.Source = null;
@@ -697,6 +704,29 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    private void EditFcbClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy ||
+            _fatPath is null ||
+            _datPath is null ||
+            EntriesGrid.SelectedItems.OfType<ArchiveEntryRow>()
+                .Where(row => row.CanEditFcb)
+                .OrderBy(row => row.Index)
+                .Select(row => new FcbTransactionTarget(row.Index, row.Entry.NameHash, row.Name))
+                .ToArray() is not { Length: > 0 } targets)
+        {
+            return;
+        }
+
+        var editor = new FcbTransactionWindow(
+            new ArchivePair(_fatPath, _datPath),
+            targets)
+        {
+            Owner = this,
+        };
+        editor.ShowDialog();
+    }
+
     private void WindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.F && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
@@ -794,6 +824,7 @@ public partial class MainWindow : Window, IDisposable
         EntriesGrid.IsEnabled = !busy;
         InspectMeshButton.IsEnabled = !busy;
         PreviewTextureButton.IsEnabled = !busy;
+        EditFcbButton.IsEnabled = !busy;
         Mouse.OverrideCursor = busy ? Cursors.Wait : null;
         UpdatePageControls();
 
@@ -891,6 +922,8 @@ public partial class MainWindow : Window, IDisposable
         public bool CanInspectMesh => PrimaryName.EndsWith(".xbg", StringComparison.OrdinalIgnoreCase);
 
         public bool CanPreviewTexture => PrimaryName.EndsWith(".xbt", StringComparison.OrdinalIgnoreCase);
+
+        public bool CanEditFcb => PrimaryName.EndsWith(".fcb", StringComparison.OrdinalIgnoreCase);
 
         public string Name => ResolvedName ?? $"Entry {Index:D6}";
 

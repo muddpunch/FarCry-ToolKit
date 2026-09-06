@@ -198,6 +198,10 @@ Changing only the generated `SpawnThreadSafe` record to `true` produced planned 
 
 A synthetic two-entry archive passes Plan, order-independent fixed plan hashing, one-rebuild Dry-run, Copy, permanent backup, transactional Apply, and semantic verification of both published entries. A reflection contract test freezes API version 1 and the exact four public facade signatures. The WPF layer must consume this facade rather than lower-level archive-writing services; the authoritative contract is [`../api/fcb-archive-transaction-v1.md`](../api/fcb-archive-transaction-v1.md).
 
+## WPF transaction workspace — 2026-09-06
+
+The archive browser now opens one or more schema-compatible `.fcb` entries in a dedicated transaction window. Extended row selection feeds a single pending workspace, editable fields retain their archive entry identity, and mutations are grouped deterministically into the API v1 multi-entry request. Editable inline fields are projected through the external schema, pending values remain in memory, and **Discard** restores the loaded manifests without touching the archive. **Plan**, **Dry-run**, **Create copy**, and **Apply** call the frozen `FcbArchiveTransactionService` API v1 facade; WPF does not compose lower-level staging, builder, backup, or rollback services. Apply is bound to the exact displayed plan SHA-256 and requires an explicit warning confirmation before the facade creates or reuses immutable backups.
+
 ## Next gate
 
-Build the WPF shell against the frozen `FcbArchiveTransactionService` API v1 contract.
+Validate the WPF workspace interactively against real `common.fat` entry 93 and a multi-entry selection.

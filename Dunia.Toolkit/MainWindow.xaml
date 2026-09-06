@@ -195,7 +195,7 @@
                               CanUserAddRows="False"
                               CanUserDeleteRows="False"
                               CanUserResizeRows="False"
-                              SelectionMode="Single"
+                              SelectionMode="Extended"
                               SelectionUnit="FullRow"
                               HeadersVisibility="Column"
                               GridLinesVisibility="Horizontal"
@@ -308,6 +308,15 @@
                                     Click="PreviewTextureClick"
                                     Content="Preview texture"
                                     Visibility="Collapsed" />
+
+                            <Button x:Name="EditFcbButton"
+                                    Margin="0,12,0,0"
+                                    Padding="10,5"
+                                    HorizontalAlignment="Left"
+                                    Click="EditFcbClick"
+                                    Content="Edit selected FCB fields..."
+                                    Visibility="Collapsed"
+                                    AutomationProperties.Name="Open schema-gated FCB editor" />
 
                             <GroupBox x:Name="MeshSummaryGroup" Margin="0,12,0,0" Header="Mesh" Visibility="Collapsed">
                                 <Grid Margin="8">

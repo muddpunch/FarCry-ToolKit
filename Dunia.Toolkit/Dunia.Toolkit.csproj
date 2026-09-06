@@ -11,4 +11,8 @@
   <ItemGroup>
     <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\data\fcb-schema.fc5.txt" Link="data\fcb-schema.fc5.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\data\fcb-names.fc5.txt" Link="data\fcb-names.fc5.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

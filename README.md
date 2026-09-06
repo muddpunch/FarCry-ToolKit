@@ -104,13 +104,14 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | Atomic multi-field FCB mutation | Implemented for planning, dry-run, and confirmed in-place Apply |
 | FCB mutation template generator | Implemented; emits byte-exact no-op TSV without overwriting outputs |
 | Multi-entry FCB archive transaction API v1 | Implemented and contract-frozen for WPF integration |
+| WPF schema-gated FCB transaction workspace | Implemented for one or more selected entries; Plan, Dry-run, Copy, Apply, and Discard use API v1 |
 | XBT → DDS extraction | Implemented |
 | DDS/PNG → XBT import and re-encode | Not implemented |
 | FC5 XBG geometry decoder | Implemented for validated multi-buffer layouts and every declared LOD; safety-gated |
 | WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
 | CLI `probe`, `list`, `get`, and `tex extract` commands | Implemented |
 | Remaining production CLI commands | Not implemented |
-| WPF archive browser | Not implemented |
+| WPF archive browser | Implemented with paging, search, name discovery, texture preview, and mesh preview |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 
