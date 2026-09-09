@@ -34,6 +34,7 @@ internal static class Program
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
+          dunia tex import <template.xbt> <input.dds> <output.xbt>
 
         Mesh operations:
           dunia mesh probe <input.xbg>
@@ -152,6 +153,11 @@ internal static class Program
         if (args is ["tex", "extract", var xbtPath, var ddsPath])
         {
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "import", var templateXbtPath, var inputDdsPath, var outputXbtPath])
+        {
+            return await ImportDdsAsync(templateXbtPath, inputDdsPath, outputXbtPath).ConfigureAwait(false);
         }
 
         if (args is ["mesh", "probe", var xbgPath])
@@ -2416,6 +2422,70 @@ internal static class Program
             Console.WriteLine($"output={fullDdsPath}");
             Console.WriteLine($"header.length={result.HeaderLength}");
             Console.WriteLine($"dds.length={result.DdsLength}");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static async Task<int> ImportDdsAsync(string templateXbtPath, string ddsPath, string outputXbtPath)
+    {
+        string? temporaryPath = null;
+
+        try
+        {
+            string fullTemplatePath = Path.GetFullPath(templateXbtPath);
+            string fullDdsPath = Path.GetFullPath(ddsPath);
+            string fullOutputPath = Path.GetFullPath(outputXbtPath);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            if (string.Equals(fullTemplatePath, fullOutputPath, comparison) ||
+                string.Equals(fullDdsPath, fullOutputPath, comparison) ||
+                string.Equals(fullTemplatePath, fullDdsPath, comparison))
+            {
+                throw new ArgumentException("Template, replacement, and output paths must be different.");
+            }
+
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            temporaryPath = $"{fullOutputPath}.{Guid.NewGuid():N}.tmp";
+            await using FileStream template = File.OpenRead(fullTemplatePath);
+            await using FileStream replacement = File.OpenRead(fullDdsPath);
+            XbtDdsImportResult result;
+
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                result = await XbtDdsImporter.ImportAsync(template, replacement, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            Console.WriteLine($"output={fullOutputPath}");
+            Console.WriteLine($"header.length={result.HeaderLength}");
+            Console.WriteLine($"dds.length={result.DdsLength}");
+            Console.WriteLine("verified=true");
             return 0;
         }
         catch (Exception ex) when (IsExpectedCliError(ex))
