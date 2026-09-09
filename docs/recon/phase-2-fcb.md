@@ -202,6 +202,10 @@ A synthetic two-entry archive passes Plan, order-independent fixed plan hashing,
 
 The archive browser now opens one or more schema-compatible `.fcb` entries in a dedicated transaction window. Extended row selection feeds a single pending workspace, editable fields retain their archive entry identity, and mutations are grouped deterministically into the API v1 multi-entry request. Editable inline fields are projected through the external schema, pending values remain in memory, and **Discard** restores the loaded manifests without touching the archive. **Plan**, **Dry-run**, **Create copy**, and **Apply** call the frozen `FcbArchiveTransactionService` API v1 facade; WPF does not compose lower-level staging, builder, backup, or rollback services. Apply is bound to the exact displayed plan SHA-256 and requires an explicit warning confirmation before the facade creates or reuses immutable backups.
 
+The workspace request shape was validated against real `common.fat` entries 124 (`06F16EF59B9DD183`) and 164 (`0B45D3D69F1EBC8C`). Planning two `SpawnThreadSafe=false -> true` mutations produced plan SHA-256 `EFDBBD58AC44324EE7DC8679C75C64C75997A255AE774936E2C3812E9784F235`. The independent API v1 dry-run reproduced the exact plan hash with `replacement.entries=2`, `payloads.exact=true`, `entries.untouched=true`, `dat.prefix.exact=true`, `source.modified=false`, and `verified=true`.
+
+An STA WPF smoke run loaded both real manifests into the rendered transaction window, exposed 12 editable rows, changed one field per resource, and verified that the UI request builder emitted two transaction entries with one mutation each. Visual inspection moved `Current` and `Pending value` ahead of diagnostic hashes, froze the entry identity columns during horizontal scrolling, and retained keyboard access keys for every transaction action.
+
 ## Next gate
 
-Validate the WPF workspace interactively against real `common.fat` entry 93 and a multi-entry selection.
+Complete interactive visual and keyboard validation of the WPF workspace against real `common.fat` entry 93 and a multi-entry selection.

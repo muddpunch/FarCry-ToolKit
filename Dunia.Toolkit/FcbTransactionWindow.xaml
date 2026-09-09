@@ -102,7 +102,7 @@
                     <Button x:Name="LoadSchemaButton"
                             HorizontalAlignment="Right"
                             Click="LoadSchemaClick"
-                            Content="Load schema..."
+                            Content="_Load schema..."
                             AutomationProperties.Name="Load FCB value schema" />
                     <TextBlock x:Name="SchemaPathText"
                                MaxWidth="420"
@@ -130,6 +130,7 @@
                       SelectionUnit="FullRow"
                       HeadersVisibility="Column"
                       GridLinesVisibility="Horizontal"
+                      FrozenColumnCount="3"
                       EnableRowVirtualization="True"
                       Background="{StaticResource WindowBrush}"
                       Foreground="{StaticResource TextBrush}"
@@ -139,7 +140,7 @@
                       BorderBrush="{StaticResource BorderBrush}"
                       AutomationProperties.Name="Editable FCB fields">
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Width="46" Header="State" IsReadOnly="True">
+                    <DataGridTemplateColumn Width="64" Header="State" IsReadOnly="True">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock HorizontalAlignment="Center"
@@ -150,20 +151,20 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Width="70" Header="Entry" Binding="{Binding EntryIndex}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="180" Header="Resource" Binding="{Binding ResourceName}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="70" Header="Node" Binding="{Binding NodeIndex}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="70" Header="Field" Binding="{Binding FieldIndex}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="150" Header="Type" Binding="{Binding TypeName}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="105" Header="Type hash" Binding="{Binding TypeHash}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="150" Header="Name" Binding="{Binding FieldName}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="105" Header="Field hash" Binding="{Binding FieldHash}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="145" Header="Codec" Binding="{Binding Codec}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="2*" MinWidth="180" Header="Current" Binding="{Binding OriginalValue}" IsReadOnly="True" />
-                    <DataGridTextColumn Width="2*" MinWidth="180" Header="Pending value">
+                    <DataGridTextColumn Width="150" Header="Resource" Binding="{Binding ResourceName}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="60" Header="Node" Binding="{Binding NodeIndex}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="60" Header="Field" Binding="{Binding FieldIndex}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="145" Header="Name" Binding="{Binding FieldName}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="150" Header="Codec" Binding="{Binding Codec}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="180" Header="Current" Binding="{Binding OriginalValue}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="180" Header="Pending value">
                         <DataGridTextColumn.Binding>
                             <Binding Path="Value" UpdateSourceTrigger="PropertyChanged" ValidatesOnExceptions="True" />
                         </DataGridTextColumn.Binding>
                     </DataGridTextColumn>
+                    <DataGridTextColumn Width="150" Header="Type" Binding="{Binding TypeName}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="105" Header="Type hash" Binding="{Binding TypeHash}" IsReadOnly="True" />
+                    <DataGridTextColumn Width="105" Header="Field hash" Binding="{Binding FieldHash}" IsReadOnly="True" />
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -190,17 +191,17 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button x:Name="DiscardButton" Margin="0,0,8,0" Click="DiscardClick" Content="Discard" IsEnabled="False" />
-                        <Button x:Name="PlanButton" Margin="0,0,8,0" Click="PlanClick" Content="Plan" IsEnabled="False" />
-                        <Button x:Name="DryRunButton" Margin="0,0,8,0" Click="DryRunClick" Content="Dry-run" IsEnabled="False" />
-                        <Button x:Name="CreateCopyButton" Margin="0,0,8,0" Click="CreateCopyClick" Content="Create copy..." IsEnabled="False" />
+                        <Button x:Name="DiscardButton" Margin="0,0,8,0" Click="DiscardClick" Content="_Discard" IsEnabled="False" />
+                        <Button x:Name="PlanButton" Margin="0,0,8,0" Click="PlanClick" Content="_Plan" IsEnabled="False" />
+                        <Button x:Name="DryRunButton" Margin="0,0,8,0" Click="DryRunClick" Content="Dry-_run" IsEnabled="False" />
+                        <Button x:Name="CreateCopyButton" Margin="0,0,8,0" Click="CreateCopyClick" Content="Create _copy..." IsEnabled="False" />
                         <Button x:Name="ApplyButton"
                                 Style="{StaticResource PrimaryButton}"
                                 Click="ApplyClick"
-                                Content="Apply"
+                                Content="_Apply"
                                 IsEnabled="False"
                                 AutomationProperties.HelpText="Creates immutable original backups before writing" />
-                        <Button x:Name="CancelButton" Margin="8,0,0,0" Click="CancelClick" Content="Cancel" Visibility="Collapsed" />
+                        <Button x:Name="CancelButton" Margin="8,0,0,0" Click="CancelClick" Content="Ca_ncel" Visibility="Collapsed" />
                     </StackPanel>
 
                     <TextBlock x:Name="PlanHashText"
