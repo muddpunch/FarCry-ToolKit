@@ -14,8 +14,16 @@ Real `common.fat` entry 1087 (`graphics\_common\_textures\generic\mask\blackarra
 
 Real `common.fat` entry 40 (`ui\zeta\06_icons\worldmapcompass\tx_animal_fish_salmon.xbt`) completed `XBT → PNG → DDS → XBT → PNG`. Both XBT files were 9,400 bytes, retained the exact 36-byte wrapper, resolved as 96×96 BC3 with one mip, and decoded successfully after re-encoding.
 
-The WPF texture preview exposes atomic **Export PNG** and **Create replacement XBT** actions. PNG and DDS replacements use the same validated format-library paths as the CLI, preserve the original wrapper, and refuse existing output files.
+The WPF texture preview exposes atomic **Export PNG**, **Create replacement XBT**, and **Replace in archive** actions. PNG and DDS replacements use the same validated format-library paths as the CLI and preserve the original wrapper.
+
+## Archive transaction — 2026-09-09
+
+`XbtArchiveReplacementService` is the shared Plan, Dry-run, Copy, and Apply boundary. Its SHA-256 plan binds the entry index, expected resource hash, source payload hash, replacement payload hash, and replacement length. Dry-run rebuilds a temporary pair, verifies the exact replacement bytes, decodes the published XBT, and removes all temporary outputs.
+
+Copy refuses existing destinations and removes both outputs if post-publication texture validation fails. Apply fingerprints and locks the source pair, revalidates the planned source payload before building, creates immutable `.original` backups, and retains rollback files until both byte-exact replacement validation and XBT decoding succeed.
+
+The WPF action converts PNG or DDS input into a template-compatible XBT in memory, executes Plan and Dry-run, displays the bound plan hash, requires an explicit warning confirmation, then calls the transaction facade. The CLI exposes the same boundary through `tex archive-plan`, `tex archive-dry-run`, `tex archive-copy`, and confirmed `tex archive-apply`.
 
 ## Next gate
 
-Integrate texture replacement into the WPF pending-change workflow and validate a copied archive in-game before enabling confirmed in-place texture Apply.
+Validate a copied archive with a visibly modified texture in-game, then record the exact build, archive, entry, and observed render result.

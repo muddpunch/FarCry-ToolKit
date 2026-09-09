@@ -180,6 +180,7 @@ Warnings are treated as errors.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 - `XbtDdsImporter` preserves the template XBT wrapper byte-for-byte and accepts only a DDS with identical dimensions, mip topology, pixel format, and payload length.
 - `XbtPngExporter` and `XbtPngImporter` provide CRC-validated 8-bit PNG conversion with template-driven DXGI compression and mip generation.
+- `XbtArchiveReplacementService` binds Plan, Dry-run, Copy, and Apply to exact source/replacement hashes and validates the published XBT before committing a transaction.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
 
 ## Archive inspection
@@ -231,6 +232,10 @@ dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
 dotnet run --project Dunia.Cli -- tex export-png "input.xbt" "output.png"
 dotnet run --project Dunia.Cli -- tex import "template.xbt" "replacement.dds" "output.xbt"
 dotnet run --project Dunia.Cli -- tex import-png "template.xbt" "replacement.png" "output.xbt"
+dotnet run --project Dunia.Cli -- tex archive-plan "common.fat" 40 0123456789ABCDEF "replacement.xbt"
+dotnet run --project Dunia.Cli -- tex archive-dry-run "common.fat" 40 0123456789ABCDEF "replacement.xbt"
+dotnet run --project Dunia.Cli -- tex archive-copy "common.fat" "common.texture-test.fat" <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
+dotnet run --project Dunia.Cli -- tex archive-apply "common.fat" --confirm-write <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
 ```
 
 Planned CLI verbs are `pack` and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.

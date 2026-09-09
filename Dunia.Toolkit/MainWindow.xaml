@@ -355,8 +355,13 @@
                                                HorizontalAlignment="Center"
                                                Foreground="{StaticResource MutedTextBrush}" />
                                     <StackPanel Margin="0,8,0,0" HorizontalAlignment="Center" Orientation="Horizontal">
-                                        <Button Margin="0,0,8,0" Click="ExportTexturePngClick" Content="Export _PNG..." />
-                                        <Button Click="CreateReplacementXbtClick" Content="Create replacement _XBT..." />
+                                        <Button x:Name="ExportTexturePngButton" Margin="0,0,8,0"
+                                                Click="ExportTexturePngClick" Content="Export _PNG..." />
+                                        <Button x:Name="CreateReplacementXbtButton" Margin="0,0,8,0"
+                                                Click="CreateReplacementXbtClick" Content="Create replacement _XBT..." />
+                                        <Button x:Name="ReplaceTextureButton" Click="ReplaceTextureClick"
+                                                Content="_Replace in archive..."
+                                                AutomationProperties.Name="Plan, verify, and apply texture replacement" />
                                     </StackPanel>
                                 </StackPanel>
                             </GroupBox>

@@ -837,6 +837,133 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    private async void ReplaceTextureClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy ||
+            _fatPath is null ||
+            _datPath is null ||
+            EntriesGrid.SelectedItem is not ArchiveEntryRow { CanPreviewTexture: true } entry)
+        {
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Select replacement texture",
+            Filter = "Supported textures (*.png;*.dds;*.xbt)|*.png;*.dds;*.xbt|PNG image (*.png)|*.png|DDS texture (*.dds)|*.dds|XBT texture (*.xbt)|*.xbt",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var source = new ArchivePair(_fatPath, _datPath);
+        string temporaryRoot = Path.Combine(Path.GetTempPath(), "DuniaToolkit");
+        _operationCancellation = new CancellationTokenSource();
+        CancellationToken token = _operationCancellation.Token;
+        CancelButton.Visibility = Visibility.Visible;
+        bool applied = false;
+        SetBusy(true, "Preparing replacement texture...");
+        try
+        {
+            await using var replacement = new MemoryStream();
+            await CreateReplacementXbtAsync(dialog.FileName, entry, replacement, token);
+            replacement.Position = 0;
+
+            StatusText.Text = "Planning texture transaction...";
+            XbtArchiveReplacementPlan plan = await XbtArchiveReplacementService.PlanAsync(
+                source, entry.Index, entry.Entry.NameHash, replacement, token);
+            replacement.Position = 0;
+
+            StatusText.Text = "Building and validating dry-run archive...";
+            XbtArchiveReplacementDryRunResult dryRun = await XbtArchiveReplacementService.DryRunAsync(
+                source, entry.Index, entry.Entry.NameHash, replacement, temporaryRoot, token);
+            if (!dryRun.Verified || !string.Equals(plan.PlanSha256, dryRun.Plan.PlanSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Texture dry-run did not reproduce the planned transaction.");
+            }
+
+            MessageBoxResult confirmation = MessageBox.Show(
+                this,
+                $"Replace:\n{entry.Name}\n\nArchive:\n{source.FatPath}\n\n" +
+                $"Verified plan: {plan.PlanSha256[..16]}...\n" +
+                $"Replacement size: {FormatBytes(plan.ReplacementLength)}\n\n" +
+                "The game must be closed. Immutable .original backups will be created before the first write.",
+                "Apply verified texture transaction",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                StatusText.Text = "Verified texture transaction not applied";
+                return;
+            }
+
+            replacement.Position = 0;
+            StatusText.Text = "Applying verified texture transaction...";
+            FatV10ArchivePatchApplyResult result = await XbtArchiveReplacementService.ApplyAsync(
+                source, plan.PlanSha256, entry.Index, entry.Entry.NameHash,
+                replacement, temporaryRoot, token);
+            applied = true;
+            StatusText.Text = result.Backup.CreatedAny
+                ? "Texture replaced and immutable backups created"
+                : "Texture replaced and existing immutable backups retained";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation cancelled";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            _operationCancellation.Dispose();
+            _operationCancellation = null;
+            CancelButton.Visibility = Visibility.Collapsed;
+            SetBusy(false);
+        }
+
+        if (applied)
+        {
+            await LoadArchiveAsync(source.FatPath);
+        }
+    }
+
+    private async Task CreateReplacementXbtAsync(
+        string replacementPath,
+        ArchiveEntryRow entry,
+        Stream output,
+        CancellationToken cancellationToken)
+    {
+        await using FileStream replacement = File.OpenRead(replacementPath);
+        string extension = Path.GetExtension(replacementPath);
+        if (string.Equals(extension, ".xbt", StringComparison.OrdinalIgnoreCase))
+        {
+            await replacement.CopyToAsync(output, cancellationToken);
+            return;
+        }
+
+        using var template = new MemoryStream(entry.Entry.UncompressedSize);
+        await using (FileStream data = File.OpenRead(_datPath!))
+        {
+            await FatV10PayloadExtractor.ExtractAsync(data, entry.Entry, template, cancellationToken);
+        }
+
+        template.Position = 0;
+        if (string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
+        {
+            await XbtPngImporter.ImportAsync(template, replacement, output, cancellationToken);
+        }
+        else
+        {
+            await XbtDdsImporter.ImportAsync(template, replacement, output, cancellationToken);
+        }
+    }
+
     private void EditFcbClick(object sender, RoutedEventArgs e)
     {
         if (_isBusy ||
@@ -957,6 +1084,9 @@ public partial class MainWindow : Window, IDisposable
         EntriesGrid.IsEnabled = !busy;
         InspectMeshButton.IsEnabled = !busy;
         PreviewTextureButton.IsEnabled = !busy;
+        ExportTexturePngButton.IsEnabled = !busy;
+        CreateReplacementXbtButton.IsEnabled = !busy;
+        ReplaceTextureButton.IsEnabled = !busy;
         EditFcbButton.IsEnabled = !busy;
         Mouse.OverrideCursor = busy ? Cursors.Wait : null;
         UpdatePageControls();

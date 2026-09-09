@@ -37,6 +37,10 @@ internal static class Program
           dunia tex export-png <input.xbt> <output.png>
           dunia tex import <template.xbt> <input.dds> <output.xbt>
           dunia tex import-png <template.xbt> <input.png> <output.xbt>
+          dunia tex archive-plan <archive.fat> <entry-index> <resource-hash> <replacement.xbt>
+          dunia tex archive-dry-run <archive.fat> <entry-index> <resource-hash> <replacement.xbt>
+          dunia tex archive-copy <source.fat> <output.fat> <plan-sha256> <entry-index> <resource-hash> <replacement.xbt>
+          dunia tex archive-apply <archive.fat> --confirm-write <plan-sha256> <entry-index> <resource-hash> <replacement.xbt>
 
         Mesh operations:
           dunia mesh probe <input.xbg>
@@ -170,6 +174,44 @@ internal static class Program
         if (args is ["tex", "import-png", var pngTemplatePath, var inputPngPath, var pngOutputPath])
         {
             return await ImportPngAsync(pngTemplatePath, inputPngPath, pngOutputPath).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "archive-plan", var texturePlanFatPath, var rawTexturePlanIndex,
+                var rawTexturePlanHash, var texturePlanReplacement]
+            && TryParseEntryIndex(rawTexturePlanIndex, out int texturePlanIndex)
+            && TryParseResourceHash(rawTexturePlanHash, out ulong texturePlanHash))
+        {
+            return await PlanTextureArchiveReplacementAsync(
+                texturePlanFatPath, texturePlanIndex, texturePlanHash, texturePlanReplacement).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "archive-dry-run", var textureDryRunFatPath, var rawTextureDryRunIndex,
+                var rawTextureDryRunHash, var textureDryRunReplacement]
+            && TryParseEntryIndex(rawTextureDryRunIndex, out int textureDryRunIndex)
+            && TryParseResourceHash(rawTextureDryRunHash, out ulong textureDryRunHash))
+        {
+            return await DryRunTextureArchiveReplacementAsync(
+                textureDryRunFatPath, textureDryRunIndex, textureDryRunHash, textureDryRunReplacement).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "archive-copy", var textureCopySource, var textureCopyOutput,
+                var textureCopyPlan, var rawTextureCopyIndex, var rawTextureCopyHash, var textureCopyReplacement]
+            && TryParseEntryIndex(rawTextureCopyIndex, out int textureCopyIndex)
+            && TryParseResourceHash(rawTextureCopyHash, out ulong textureCopyHash))
+        {
+            return await CopyTextureArchiveReplacementAsync(
+                textureCopySource, textureCopyOutput, textureCopyPlan,
+                textureCopyIndex, textureCopyHash, textureCopyReplacement).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "archive-apply", var textureApplyFatPath, "--confirm-write",
+                var textureApplyPlan, var rawTextureApplyIndex, var rawTextureApplyHash, var textureApplyReplacement]
+            && TryParseEntryIndex(rawTextureApplyIndex, out int textureApplyIndex)
+            && TryParseResourceHash(rawTextureApplyHash, out ulong textureApplyHash))
+        {
+            return await ApplyTextureArchiveReplacementAsync(
+                textureApplyFatPath, textureApplyPlan,
+                textureApplyIndex, textureApplyHash, textureApplyReplacement).ConfigureAwait(false);
         }
 
         if (args is ["mesh", "probe", var xbgPath])
@@ -2634,5 +2676,107 @@ internal static class Program
                 File.Delete(temporaryPath);
             }
         }
+    }
+
+    private static async Task<int> PlanTextureArchiveReplacementAsync(
+        string fatPath, int entryIndex, ulong resourceHash, string replacementPath)
+    {
+        try
+        {
+            await using FileStream replacement = File.OpenRead(replacementPath);
+            XbtArchiveReplacementPlan plan = await XbtArchiveReplacementService.PlanAsync(
+                ArchivePair.FromIndex(fatPath), entryIndex, resourceHash, replacement).ConfigureAwait(false);
+            WriteTextureArchivePlan(plan);
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> DryRunTextureArchiveReplacementAsync(
+        string fatPath, int entryIndex, ulong resourceHash, string replacementPath)
+    {
+        try
+        {
+            await using FileStream replacement = File.OpenRead(replacementPath);
+            XbtArchiveReplacementDryRunResult result = await XbtArchiveReplacementService.DryRunAsync(
+                ArchivePair.FromIndex(fatPath), entryIndex, resourceHash, replacement,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            WriteTextureArchivePlan(result.Plan);
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            Console.WriteLine($"verified={result.Verified.ToString().ToLowerInvariant()}");
+            return result.Verified ? 0 : 3;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> CopyTextureArchiveReplacementAsync(
+        string sourceFatPath,
+        string outputFatPath,
+        string expectedPlan,
+        int entryIndex,
+        ulong resourceHash,
+        string replacementPath)
+    {
+        try
+        {
+            await using FileStream replacement = File.OpenRead(replacementPath);
+            ArchivePair destination = ArchivePair.FromIndex(outputFatPath);
+            FatV10ArchivePatchFileBuildResult result = await XbtArchiveReplacementService.CopyAsync(
+                ArchivePair.FromIndex(sourceFatPath), destination, expectedPlan, entryIndex, resourceHash,
+                replacement, Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine($"output.fat={destination.FatPath}");
+            Console.WriteLine($"output.dat={destination.DatPath}");
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ApplyTextureArchiveReplacementAsync(
+        string fatPath,
+        string expectedPlan,
+        int entryIndex,
+        ulong resourceHash,
+        string replacementPath)
+    {
+        try
+        {
+            await using FileStream replacement = File.OpenRead(replacementPath);
+            FatV10ArchivePatchApplyResult result = await XbtArchiveReplacementService.ApplyAsync(
+                ArchivePair.FromIndex(fatPath), expectedPlan, entryIndex, resourceHash,
+                replacement, Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine($"backup.created={result.Backup.CreatedAny.ToString().ToLowerInvariant()}");
+            Console.WriteLine(FormattableString.Invariant($"dat.length={result.Build.DataLength}"));
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static void WriteTextureArchivePlan(XbtArchiveReplacementPlan plan)
+    {
+        Console.WriteLine(FormattableString.Invariant($"entry={plan.EntryIndex}"));
+        Console.WriteLine(FormattableString.Invariant($"resource.hash={plan.ResourceNameHash:X16}"));
+        Console.WriteLine($"source.sha256={plan.SourcePayloadSha256}");
+        Console.WriteLine($"replacement.sha256={plan.ReplacementPayloadSha256}");
+        Console.WriteLine(FormattableString.Invariant($"replacement.length={plan.ReplacementLength}"));
+        Console.WriteLine($"plan.sha256={plan.PlanSha256}");
     }
 }
