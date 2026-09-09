@@ -13,7 +13,7 @@ The project aims to provide one safe application for browsing, extracting, inspe
 - Search for resources across related archives.
 - Extract individual files or complete archives.
 - Inspect and round-trip FCB (`FarCryBinary`) trees with hash-to-name resolution.
-- Preview `.xbt` textures and export their embedded DDS data.
+- Preview every `.xbt` mip level with RGBA/RGB/R/G/B/A channel isolation and export DDS/PNG data.
 - Preview supported `.xbg` meshes and switch LODs in an interactive 3D viewport with orbit, pan, zoom, and keyboard controls.
 - Replace textures with automatic validation and conversion.
 - Stage modifications in memory before writing anything to disk.
@@ -111,8 +111,8 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | FC5 XBG geometry decoder | Implemented for validated multi-buffer layouts and every declared LOD; safety-gated |
 | WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
 | CLI `probe`, `list`, `get`, `tex extract`, `tex export-png`, `tex import`, and `tex import-png` commands | Implemented |
-| Remaining production CLI commands | Not implemented |
-| WPF archive browser | Implemented with paging, search, name discovery, texture preview/export/import, and mesh preview |
+| Directory pack and resource-reference CLI commands | Implemented with exact replacement validation and bounded streaming scans |
+| WPF archive browser | Implemented with paging, search, name discovery, Pack, reference scanning, verified texture replacement, and mesh preview |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 
@@ -180,7 +180,10 @@ Warnings are treated as errors.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 - `XbtDdsImporter` preserves the template XBT wrapper byte-for-byte and accepts only a DDS with identical dimensions, mip topology, pixel format, and payload length.
 - `XbtPngExporter` and `XbtPngImporter` provide CRC-validated 8-bit PNG conversion with template-driven DXGI compression and mip generation.
+- `XbtMipDecoder` decodes bounded complete mip chains; `XbtMipPngWriter` exports any selected level as a CRC-protected RGBA PNG.
 - `XbtArchiveReplacementService` binds Plan, Dry-run, Copy, and Apply to exact source/replacement hashes and validates the published XBT before committing a transaction.
+- `FatV10DirectoryPackService` maps normalized relative paths to archive CRC64 identities, stages every input, rebuilds a new pair, and verifies every published replacement.
+- `DuniaResourceReferenceScanner` finds archive resource hashes in binary payloads across streaming buffer boundaries in little- and big-endian layouts.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
 
 ## Archive inspection
@@ -236,9 +239,13 @@ dotnet run --project Dunia.Cli -- tex archive-plan "common.fat" 40 0123456789ABC
 dotnet run --project Dunia.Cli -- tex archive-dry-run "common.fat" 40 0123456789ABCDEF "replacement.xbt"
 dotnet run --project Dunia.Cli -- tex archive-copy "common.fat" "common.texture-test.fat" <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
 dotnet run --project Dunia.Cli -- tex archive-apply "common.fat" --confirm-write <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
+dotnet run --project Dunia.Cli -- mips list "input.xbt"
+dotnet run --project Dunia.Cli -- mips export "input.xbt" ".\input-mips"
+dotnet run --project Dunia.Cli -- pack "common.fat" "common.mod.fat" ".\changed-resources"
+dotnet run --project Dunia.Cli -- refs "common.fat" 40 --names "archive-names.fc5.txt"
 ```
 
-Planned CLI verbs are `pack` and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.
+`pack` never modifies its source or overwrites an output pair. Every file path below the input directory is normalized and hashed as an FC5 resource path; unknown inputs and hash collisions fail before publication.
 
 Compute a normalized FC5 resource-path CRC64 or resolve one from a local one-path-per-line name list:
 

@@ -25,6 +25,7 @@ internal static class Program
           entry     Inspect an archive entry
           get       Extract an archive entry
           tex       Texture operations
+          mips      Inspect or export an XBT mip chain
           mesh      Mesh operations
           pack      Pack changed resources
           rebuild   Rebuild an archive pair
@@ -41,6 +42,10 @@ internal static class Program
           dunia tex archive-dry-run <archive.fat> <entry-index> <resource-hash> <replacement.xbt>
           dunia tex archive-copy <source.fat> <output.fat> <plan-sha256> <entry-index> <resource-hash> <replacement.xbt>
           dunia tex archive-apply <archive.fat> --confirm-write <plan-sha256> <entry-index> <resource-hash> <replacement.xbt>
+
+        Mip operations:
+          dunia mips list <input.xbt>
+          dunia mips export <input.xbt> <new-output-directory>
 
         Mesh operations:
           dunia mesh probe <input.xbg>
@@ -80,12 +85,14 @@ internal static class Program
           dunia list <archive.fat> [--limit N] [--names paths.txt]
           dunia entry <archive.fat> <entry-index> [--names paths.txt]
           dunia get <archive.fat> <entry-index> <output-file>
+          dunia pack <source.fat> <output.fat> <changed-resource-directory>
           dunia rebuild <source.fat> <output.fat> <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --dry-run <entry-index> <replacement-file> [...]
           dunia apply <archive.fat> --confirm-write <entry-index> <expected-hash> <replacement-file> [...]
           dunia restore <archive.fat> --confirm-write <fat-backup-sha256> <dat-backup-sha256>
           dunia verify roundtrip <archive.fat>
           dunia verify replacement <archive.fat> <entry-index>
+          dunia refs <archive.fat> <entry-index> [--names paths.txt]
 
         Hash operations:
           dunia hash compute <resource-path>
@@ -212,6 +219,16 @@ internal static class Program
             return await ApplyTextureArchiveReplacementAsync(
                 textureApplyFatPath, textureApplyPlan,
                 textureApplyIndex, textureApplyHash, textureApplyReplacement).ConfigureAwait(false);
+        }
+
+        if (args is ["mips", "list", var mipListXbtPath])
+        {
+            return await ListMipMapsAsync(mipListXbtPath).ConfigureAwait(false);
+        }
+
+        if (args is ["mips", "export", var mipExportXbtPath, var mipOutputDirectory])
+        {
+            return await ExportMipMapsAsync(mipExportXbtPath, mipOutputDirectory).ConfigureAwait(false);
         }
 
         if (args is ["mesh", "probe", var xbgPath])
@@ -546,6 +563,12 @@ internal static class Program
             return await RebuildAsync(args).ConfigureAwait(false);
         }
 
+        if (args is ["pack", var packSourceFatPath, var packOutputFatPath, var packInputDirectory])
+        {
+            return await PackDirectoryAsync(
+                packSourceFatPath, packOutputFatPath, packInputDirectory).ConfigureAwait(false);
+        }
+
         if (args.Length >= 5 && args[0] == "apply" && args[2] == "--dry-run" && (args.Length - 3) % 2 == 0)
         {
             return await ApplyDryRunAsync(args).ConfigureAwait(false);
@@ -575,6 +598,19 @@ internal static class Program
             && TryParseEntryIndex(rawReplacementIndex, out int replacementIndex))
         {
             return await VerifyReplacementAsync(replacementFatPath, replacementIndex).ConfigureAwait(false);
+        }
+
+        if (args is ["refs", var refsFatPath, var rawRefsIndex]
+            && TryParseEntryIndex(rawRefsIndex, out int refsIndex))
+        {
+            return await FindResourceReferencesAsync(refsFatPath, refsIndex, null).ConfigureAwait(false);
+        }
+
+        if (args is ["refs", var namedRefsFatPath, var rawNamedRefsIndex, "--names", var refsNamesPath]
+            && TryParseEntryIndex(rawNamedRefsIndex, out int namedRefsIndex))
+        {
+            return await FindResourceReferencesAsync(
+                namedRefsFatPath, namedRefsIndex, refsNamesPath).ConfigureAwait(false);
         }
 
         Console.Error.WriteLine("Invalid or unavailable command. Use --help for usage.");
@@ -2403,6 +2439,99 @@ internal static class Program
         }
     }
 
+    private static async Task<int> PackDirectoryAsync(
+        string sourceFatPath,
+        string outputFatPath,
+        string inputDirectory)
+    {
+        try
+        {
+            FatV10DirectoryPackResult result = await FatV10DirectoryPackService.BuildAsync(
+                ArchivePair.FromIndex(sourceFatPath),
+                ArchivePair.FromIndex(outputFatPath),
+                inputDirectory,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit")).ConfigureAwait(false);
+            Console.WriteLine("path\thash\tentries\tlength\tsha256");
+            foreach (FatV10DirectoryPackItem item in result.Items)
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"{item.ResourcePath}\t{item.ResourceHash:X16}\t{string.Join(',', item.EntryIndices)}\t{item.Length}\t{item.Sha256}"));
+            }
+
+            Console.WriteLine($"output.fat={result.Build.OutputPair.FatPath}");
+            Console.WriteLine($"output.dat={result.Build.OutputPair.DatPath}");
+            Console.WriteLine(FormattableString.Invariant($"replacements={result.Build.Build.ReplacementCount}"));
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> FindResourceReferencesAsync(
+        string fatPath,
+        int entryIndex,
+        string? namesPath)
+    {
+        try
+        {
+            ArchivePair pair = ArchivePair.FromIndex(fatPath);
+            FatV10Index index;
+            using (FileStream fat = File.OpenRead(pair.FatPath))
+            {
+                index = FatV10IndexReader.Read(fat, new FileInfo(pair.DatPath).Length);
+            }
+
+            if ((uint)entryIndex >= (uint)index.Entries.Count)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(entryIndex), entryIndex,
+                    $"Entry index must be between 0 and {index.Entries.Count - 1}.");
+            }
+
+            DuniaNameResolver? resolver = namesPath is null ? null : LoadResolver(namesPath);
+            var candidateHashes = index.Entries.Select(entry => entry.NameHash).ToHashSet();
+            string temporaryPath = Path.Combine(Path.GetTempPath(), $"dunia-refs-{Guid.NewGuid():N}.tmp");
+            await using var payload = new FileStream(temporaryPath, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 1024 * 1024,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose,
+            });
+            await using (FileStream data = File.OpenRead(pair.DatPath))
+            {
+                await FatV10PayloadExtractor.ExtractAsync(data, index.Entries[entryIndex], payload).ConfigureAwait(false);
+            }
+
+            payload.Position = 0;
+            IReadOnlyList<DuniaResourceReferenceMatch> matches = await
+                DuniaResourceReferenceScanner.ScanAsync(payload, candidateHashes).ConfigureAwait(false);
+            Console.WriteLine("offset\tendian\thash\tname");
+            foreach (DuniaResourceReferenceMatch match in matches)
+            {
+                string name = resolver is null
+                    ? string.Empty
+                    : string.Join(" | ", resolver.Resolve(match.ResourceHash));
+                Console.WriteLine(FormattableString.Invariant(
+                    $"0x{match.Offset:X}\t{(match.Endianness == DuniaResourceReferenceEndianness.LittleEndian ? "le" : "be")}\t{match.ResourceHash:X16}\t{name}"));
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"entry={entryIndex}"));
+            Console.WriteLine(FormattableString.Invariant($"matches={matches.Count}"));
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
     private static int ProbeXbg(string xbgPath)
     {
         try
@@ -2778,5 +2907,81 @@ internal static class Program
         Console.WriteLine($"replacement.sha256={plan.ReplacementPayloadSha256}");
         Console.WriteLine(FormattableString.Invariant($"replacement.length={plan.ReplacementLength}"));
         Console.WriteLine($"plan.sha256={plan.PlanSha256}");
+    }
+
+    private static async Task<int> ListMipMapsAsync(string xbtPath)
+    {
+        try
+        {
+            await using FileStream input = File.OpenRead(xbtPath);
+            IReadOnlyList<XbtMipImage> mips = await XbtMipDecoder.DecodeAsync(input).ConfigureAwait(false);
+            Console.WriteLine("level\twidth\theight\trgba.length");
+            foreach (XbtMipImage mip in mips)
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"{mip.Level}\t{mip.Width}\t{mip.Height}\t{mip.RgbaPixels.Length}"));
+            }
+
+            Console.WriteLine(FormattableString.Invariant($"mips={mips.Count}"));
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ExportMipMapsAsync(string xbtPath, string outputDirectory)
+    {
+        string? temporaryDirectory = null;
+        try
+        {
+            string destination = Path.GetFullPath(outputDirectory);
+            if (Directory.Exists(destination) || File.Exists(destination))
+            {
+                throw new IOException("Mip output directory already exists.");
+            }
+
+            string? parent = Path.GetDirectoryName(destination);
+            if (parent is null || !Directory.Exists(parent))
+            {
+                throw new DirectoryNotFoundException($"Mip output parent directory was not found: {parent}");
+            }
+
+            temporaryDirectory = $"{destination}.{Guid.NewGuid():N}.tmp";
+            Directory.CreateDirectory(temporaryDirectory);
+            await using FileStream input = File.OpenRead(xbtPath);
+            IReadOnlyList<XbtMipImage> mips = await XbtMipDecoder.DecodeAsync(input).ConfigureAwait(false);
+            foreach (XbtMipImage mip in mips)
+            {
+                string path = Path.Combine(temporaryDirectory, $"mip-{mip.Level:D2}-{mip.Width}x{mip.Height}.png");
+                await using FileStream output = new(
+                    path, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    80 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                await XbtMipPngWriter.WriteAsync(mip, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            Directory.Move(temporaryDirectory, destination);
+            temporaryDirectory = null;
+            Console.WriteLine($"output={destination}");
+            Console.WriteLine(FormattableString.Invariant($"mips={mips.Count}"));
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryDirectory is not null && Directory.Exists(temporaryDirectory))
+            {
+                Directory.Delete(temporaryDirectory, true);
+            }
+        }
     }
 }

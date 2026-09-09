@@ -36,10 +36,20 @@ public partial class MainWindow : Window, IDisposable
     private int _pageRequestVersion;
     private bool _isBusy;
     private bool _isDisposed;
+    private IReadOnlyList<XbtMipImage> _textureMips = Array.Empty<XbtMipImage>();
 
     public MainWindow()
     {
         InitializeComponent();
+        TextureChannelSelector.ItemsSource = Enum.GetValues<TextureChannel>()
+            .Select(channel => new TextureChannelOption(channel, channel switch
+            {
+                TextureChannel.Rgba => "RGBA",
+                TextureChannel.Rgb => "RGB",
+                _ => channel.ToString(),
+            }))
+            .ToArray();
+        TextureChannelSelector.SelectedIndex = 0;
         _filterTimer = new(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, ApplyFilter, Dispatcher);
         _filterTimer.Stop();
         PreviewKeyDown += WindowPreviewKeyDown;
@@ -284,6 +294,84 @@ public partial class MainWindow : Window, IDisposable
         }
         finally
         {
+            SetBusy(false);
+        }
+    }
+
+    private async void PackDirectoryClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || _fatPath is null || _datPath is null)
+        {
+            return;
+        }
+
+        var inputDialog = new OpenFolderDialog
+        {
+            Title = "Select changed resource directory",
+            Multiselect = false,
+        };
+        if (inputDialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var outputDialog = new SaveFileDialog
+        {
+            Title = "Create packed archive copy",
+            Filter = "Dunia archive index (*.fat)|*.fat",
+            FileName = $"{Path.GetFileNameWithoutExtension(_fatPath)}.mod.fat",
+            InitialDirectory = Path.GetDirectoryName(_fatPath),
+            AddExtension = true,
+            DefaultExt = ".fat",
+            OverwritePrompt = false,
+        };
+        if (outputDialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var source = new ArchivePair(_fatPath, _datPath);
+        ArchivePair destination = ArchivePair.FromIndex(outputDialog.FileName);
+        if (File.Exists(destination.FatPath) || File.Exists(destination.DatPath))
+        {
+            ShowError("The destination FAT/DAT pair already exists. Choose a new name.");
+            return;
+        }
+
+        _operationCancellation = new CancellationTokenSource();
+        CancellationToken token = _operationCancellation.Token;
+        CancelButton.Visibility = Visibility.Visible;
+        SetBusy(true, "Staging and packing changed resources...");
+        try
+        {
+            FatV10DirectoryPackResult result = await FatV10DirectoryPackService.BuildAsync(
+                source,
+                destination,
+                inputDialog.FolderName,
+                Path.Combine(Path.GetTempPath(), "DuniaToolkit"),
+                token);
+            StatusText.Text = $"Created verified archive copy with {result.Items.Count:N0} changed resources";
+            MessageBox.Show(
+                this,
+                $"Verified archive copy created:\n\n{destination.FatPath}\n{destination.DatPath}\n\n" +
+                $"Changed resources: {result.Items.Count:N0}",
+                "Pack complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation cancelled";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            _operationCancellation.Dispose();
+            _operationCancellation = null;
+            CancelButton.Visibility = Visibility.Collapsed;
             SetBusy(false);
         }
     }
@@ -570,9 +658,11 @@ public partial class MainWindow : Window, IDisposable
             InspectMeshButton.Visibility = Visibility.Collapsed;
             PreviewTextureButton.Visibility = Visibility.Collapsed;
             EditFcbButton.Visibility = Visibility.Collapsed;
+            FindReferencesButton.Visibility = Visibility.Collapsed;
             MeshSummaryGroup.Visibility = Visibility.Collapsed;
             TexturePreviewGroup.Visibility = Visibility.Collapsed;
             TexturePreviewImage.Source = null;
+            _textureMips = Array.Empty<XbtMipImage>();
             return;
         }
 
@@ -589,12 +679,14 @@ public partial class MainWindow : Window, IDisposable
         PreviewTextureButton.Visibility = entry.CanPreviewTexture ? Visibility.Visible : Visibility.Collapsed;
         int selectedFcbCount = EntriesGrid.SelectedItems.OfType<ArchiveEntryRow>().Count(row => row.CanEditFcb);
         EditFcbButton.Visibility = selectedFcbCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        FindReferencesButton.Visibility = Visibility.Visible;
         EditFcbButton.Content = selectedFcbCount == 1
             ? "Edit selected FCB fields..."
             : $"Edit {selectedFcbCount:N0} selected FCB entries...";
         MeshSummaryGroup.Visibility = Visibility.Collapsed;
         TexturePreviewGroup.Visibility = Visibility.Collapsed;
         TexturePreviewImage.Source = null;
+        _textureMips = Array.Empty<XbtMipImage>();
     }
 
     private async void InspectMeshClick(object sender, RoutedEventArgs e)
@@ -670,7 +762,7 @@ public partial class MainWindow : Window, IDisposable
         SetBusy(true, "Reading texture...");
         try
         {
-            BitmapSource bitmap;
+            IReadOnlyList<XbtMipImage> mips;
             await using (var data = new FileStream(_datPath, new FileStreamOptions
             {
                 Mode = FileMode.Open,
@@ -679,20 +771,20 @@ public partial class MainWindow : Window, IDisposable
                 Options = FileOptions.Asynchronous | FileOptions.RandomAccess,
             }))
             await using (var xbt = new MemoryStream(entry.Entry.UncompressedSize))
-            await using (var dds = new MemoryStream())
             {
                 await FatV10PayloadExtractor.ExtractAsync(data, entry.Entry, xbt);
                 xbt.Position = 0;
-                await XbtDdsExtractor.ExtractAsync(xbt, dds);
-                dds.Position = 0;
-
-                bitmap = await DdsBitmapDecoder.DecodeAsync(dds);
+                mips = await XbtMipDecoder.DecodeAsync(xbt);
             }
 
-            TexturePreviewImage.Source = bitmap;
-            TextureDimensionsText.Text = $"{bitmap.PixelWidth:N0} x {bitmap.PixelHeight:N0} - {bitmap.Format}";
+            _textureMips = mips;
+            TextureMipSelector.ItemsSource = mips
+                .Select(mip => new TextureMipOption(mip.Level, $"{mip.Level} · {mip.Width} × {mip.Height}"))
+                .ToArray();
+            TextureMipSelector.SelectedIndex = 0;
+            UpdateTextureView();
             TexturePreviewGroup.Visibility = Visibility.Visible;
-            StatusText.Text = $"Texture decoded: {bitmap.PixelWidth:N0} x {bitmap.PixelHeight:N0}";
+            StatusText.Text = $"Texture decoded: {mips[0].Width:N0} × {mips[0].Height:N0}, {mips.Count:N0} mips";
         }
         catch (Exception ex)
         {
@@ -702,6 +794,24 @@ public partial class MainWindow : Window, IDisposable
         {
             SetBusy(false);
         }
+    }
+
+    private void TextureViewSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) =>
+        UpdateTextureView();
+
+    private void UpdateTextureView()
+    {
+        if (TextureMipSelector.SelectedItem is not TextureMipOption selected ||
+            TextureChannelSelector.SelectedItem is not TextureChannelOption channel ||
+            (uint)selected.Level >= (uint)_textureMips.Count)
+        {
+            return;
+        }
+
+        XbtMipImage mip = _textureMips[selected.Level];
+        BitmapSource bitmap = TextureBitmapRenderer.Render(mip, channel.Channel);
+        TexturePreviewImage.Source = bitmap;
+        TextureDimensionsText.Text = $"{mip.Width:N0} × {mip.Height:N0} — mip {mip.Level}, {channel.Label}";
     }
 
     private async void ExportTexturePngClick(object sender, RoutedEventArgs e)
@@ -964,6 +1074,66 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    private async void FindReferencesClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy ||
+            _index is null ||
+            _datPath is null ||
+            EntriesGrid.SelectedItem is not ArchiveEntryRow entry)
+        {
+            return;
+        }
+
+        FatV10Index index = _index;
+        DuniaNameResolver? resolver = _resolver;
+        IReadOnlyList<DuniaResourceReferenceMatch>? matches = null;
+        _operationCancellation = new CancellationTokenSource();
+        CancellationToken token = _operationCancellation.Token;
+        CancelButton.Visibility = Visibility.Visible;
+        SetBusy(true, "Scanning payload for resource references...");
+        try
+        {
+            string temporaryPath = Path.Combine(Path.GetTempPath(), $"dunia-refs-{Guid.NewGuid():N}.tmp");
+            await using var payload = new FileStream(temporaryPath, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = 1024 * 1024,
+                Options = FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose,
+            });
+            await using (FileStream data = File.OpenRead(_datPath))
+            {
+                await FatV10PayloadExtractor.ExtractAsync(data, entry.Entry, payload, token);
+            }
+
+            payload.Position = 0;
+            matches = await DuniaResourceReferenceScanner.ScanAsync(
+                payload, index.Entries.Select(item => item.NameHash).ToHashSet(), token);
+            StatusText.Text = $"Found {matches.Count:N0} resource references";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation cancelled";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            _operationCancellation.Dispose();
+            _operationCancellation = null;
+            CancelButton.Visibility = Visibility.Collapsed;
+            SetBusy(false);
+        }
+
+        if (matches is not null)
+        {
+            new ResourceReferencesWindow(entry.Name, matches, resolver) { Owner = this }.ShowDialog();
+        }
+    }
+
     private void EditFcbClick(object sender, RoutedEventArgs e)
     {
         if (_isBusy ||
@@ -1088,6 +1258,8 @@ public partial class MainWindow : Window, IDisposable
         CreateReplacementXbtButton.IsEnabled = !busy;
         ReplaceTextureButton.IsEnabled = !busy;
         EditFcbButton.IsEnabled = !busy;
+        FindReferencesButton.IsEnabled = !busy;
+        PackDirectoryMenuItem.IsEnabled = !busy && _index is not null;
         Mouse.OverrideCursor = busy ? Cursors.Wait : null;
         UpdatePageControls();
 
@@ -1171,6 +1343,10 @@ public partial class MainWindow : Window, IDisposable
     private sealed record ArchiveLoadResult(FatV10Index Index, ArchiveEntryPage Page, int ResolvedCount);
 
     private sealed record ArchiveEntryPage(ArchiveEntryRow[] Rows, int MatchCount, int PageIndex);
+
+    private sealed record TextureMipOption(int Level, string Label);
+
+    private sealed record TextureChannelOption(TextureChannel Channel, string Label);
 
     private sealed record ArchiveEntryRow(int Index, FatV10Entry Entry, string? ResolvedName)
     {

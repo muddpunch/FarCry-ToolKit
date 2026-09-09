@@ -24,6 +24,14 @@ Copy refuses existing destinations and removes both outputs if post-publication 
 
 The WPF action converts PNG or DDS input into a template-compatible XBT in memory, executes Plan and Dry-run, displays the bound plan hash, requires an explicit warning confirmation, then calls the transaction facade. The CLI exposes the same boundary through `tex archive-plan`, `tex archive-dry-run`, `tex archive-copy`, and confirmed `tex archive-apply`.
 
+## Mip and channel inspection — 2026-09-09
+
+`XbtMipDecoder` decodes the complete DDS mip chain with 256 MiB encoded and 64-megapixel decoded safety limits. `mips list` reports every level and `mips export` atomically publishes a new directory containing one CRC-protected RGBA PNG per mip.
+
+The WPF preview now selects individual mip levels and isolates RGBA, opaque RGB, red, green, blue, or alpha output without re-decoding the source texture. Channel-only views render as opaque grayscale so mask data remains directly comparable.
+
+The real `common.fat` entry 40 smoke test decoded one 96×96 mip, exported `mip-00-96x96.png` at 5,253 bytes, and removed its temporary extraction/export directory after verification.
+
 ## Next gate
 
 Validate a copied archive with a visibly modified texture in-game, then record the exact build, archive, entry, and observed render result.
