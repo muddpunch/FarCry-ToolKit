@@ -53,3 +53,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## BCnEncoder.NET
+
+`Dunia.Formats` and `Dunia.Toolkit` use [BCnEncoder.NET](https://github.com/Nominom/BCnEncoder.NET) for BCn DDS encoding and decoding. Version 2.3.0 is distributed under `MIT OR Unlicense`; see the upstream repository for the selected license text.

@@ -95,7 +95,7 @@ public static class XbtDdsImporter
         }
     }
 
-    private static async Task<DdsLayout> ReadLayoutAsync(Stream input, CancellationToken cancellationToken)
+    internal static async Task<DdsLayout> ReadLayoutAsync(Stream input, CancellationToken cancellationToken)
     {
         byte[] header = new byte[DdsLayout.MaximumLength];
         await input.ReadExactlyAsync(header.AsMemory(0, DdsLayout.MinimumLength), cancellationToken).ConfigureAwait(false);
@@ -156,7 +156,7 @@ public static class XbtDdsImporter
     private static uint ReadUInt32(byte[] data, int offset) =>
         BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, sizeof(uint)));
 
-    private sealed record DdsLayout(
+    internal sealed record DdsLayout(
         uint Width,
         uint Height,
         uint Depth,
@@ -183,7 +183,7 @@ public static class XbtDdsImporter
             : Dx10.DxgiFormat.ToString(CultureInfo.InvariantCulture);
     }
 
-    private sealed record DdsDx10Layout(
+    internal sealed record DdsDx10Layout(
         uint DxgiFormat,
         uint ResourceDimension,
         uint MiscFlag,

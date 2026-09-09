@@ -704,6 +704,139 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    private async void ExportTexturePngClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || EntriesGrid.SelectedItem is not ArchiveEntryRow { CanPreviewTexture: true } entry)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export texture as PNG",
+            Filter = "PNG image (*.png)|*.png",
+            FileName = $"{Path.GetFileNameWithoutExtension(entry.Name)}.png",
+            AddExtension = true,
+            DefaultExt = ".png",
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        await WriteTextureOutputAsync(dialog.FileName, "Exporting PNG...", async (xbt, output, token) =>
+        {
+            await XbtPngExporter.ExportAsync(xbt, output, token);
+        });
+    }
+
+    private async void CreateReplacementXbtClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || EntriesGrid.SelectedItem is not ArchiveEntryRow { CanPreviewTexture: true } entry)
+        {
+            return;
+        }
+
+        var inputDialog = new OpenFileDialog
+        {
+            Title = "Select replacement texture",
+            Filter = "Supported textures (*.png;*.dds)|*.png;*.dds|PNG image (*.png)|*.png|DDS texture (*.dds)|*.dds",
+            CheckFileExists = true,
+        };
+        if (inputDialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var outputDialog = new SaveFileDialog
+        {
+            Title = "Create replacement XBT",
+            Filter = "XBT texture (*.xbt)|*.xbt",
+            FileName = $"{Path.GetFileNameWithoutExtension(entry.Name)}.replacement.xbt",
+            AddExtension = true,
+            DefaultExt = ".xbt",
+            OverwritePrompt = true,
+        };
+        if (outputDialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        string inputPath = inputDialog.FileName;
+        await WriteTextureOutputAsync(outputDialog.FileName, "Creating replacement XBT...", async (xbt, output, token) =>
+        {
+            await using FileStream replacement = File.OpenRead(inputPath);
+            if (string.Equals(Path.GetExtension(inputPath), ".png", StringComparison.OrdinalIgnoreCase))
+            {
+                await XbtPngImporter.ImportAsync(xbt, replacement, output, token);
+            }
+            else
+            {
+                await XbtDdsImporter.ImportAsync(xbt, replacement, output, token);
+            }
+        });
+    }
+
+    private async Task WriteTextureOutputAsync(
+        string outputPath,
+        string status,
+        Func<Stream, Stream, CancellationToken, Task> writeAsync)
+    {
+        if (_datPath is null || EntriesGrid.SelectedItem is not ArchiveEntryRow { CanPreviewTexture: true } entry)
+        {
+            return;
+        }
+
+        string fullOutputPath = Path.GetFullPath(outputPath);
+        string temporaryPath = $"{fullOutputPath}.{Guid.NewGuid():N}.tmp";
+        CancellationToken token = CancellationToken.None;
+        SetBusy(true, status);
+        try
+        {
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            using var xbt = new MemoryStream(entry.Entry.UncompressedSize);
+            await using (var data = File.OpenRead(_datPath))
+            {
+                await FatV10PayloadExtractor.ExtractAsync(data, entry.Entry, xbt, token);
+            }
+
+            xbt.Position = 0;
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                await writeAsync(xbt, output, token);
+                await output.FlushAsync(token);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            StatusText.Text = $"Created {Path.GetFileName(fullOutputPath)}";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation cancelled";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+            SetBusy(false);
+        }
+    }
+
     private void EditFcbClick(object sender, RoutedEventArgs e)
     {
         if (_isBusy ||

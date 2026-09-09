@@ -107,12 +107,12 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | WPF schema-gated FCB transaction workspace | Implemented for one or more selected entries; Plan, Dry-run, Copy, Apply, and Discard use API v1 |
 | XBT → DDS extraction | Implemented |
 | DDS → XBT import | Implemented with byte-exact wrapper preservation and strict layout validation |
-| PNG → DDS re-encode | Not implemented |
+| PNG → DDS/XBT re-encode | Implemented for validated 2D BC1/BC2/BC3/BC4/BC5/BC7 DXGI templates |
 | FC5 XBG geometry decoder | Implemented for validated multi-buffer layouts and every declared LOD; safety-gated |
 | WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
-| CLI `probe`, `list`, `get`, `tex extract`, and `tex import` commands | Implemented |
+| CLI `probe`, `list`, `get`, `tex extract`, `tex export-png`, `tex import`, and `tex import-png` commands | Implemented |
 | Remaining production CLI commands | Not implemented |
-| WPF archive browser | Implemented with paging, search, name discovery, texture preview, and mesh preview |
+| WPF archive browser | Implemented with paging, search, name discovery, texture preview/export/import, and mesh preview |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 
@@ -179,6 +179,7 @@ Warnings are treated as errors.
 - `FatV10PayloadExtractor` streams validated uncompressed payloads and decodes raw LZ4 blocks with exact output-size verification.
 - `XbtDdsExtractor` strips the XBT wrapper and streams the embedded DDS payload to an output stream.
 - `XbtDdsImporter` preserves the template XBT wrapper byte-for-byte and accepts only a DDS with identical dimensions, mip topology, pixel format, and payload length.
+- `XbtPngExporter` and `XbtPngImporter` provide CRC-validated 8-bit PNG conversion with template-driven DXGI compression and mip generation.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
 
 ## Archive inspection
@@ -227,7 +228,9 @@ Extract a DDS payload without overwriting an existing output file:
 
 ```powershell
 dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
+dotnet run --project Dunia.Cli -- tex export-png "input.xbt" "output.png"
 dotnet run --project Dunia.Cli -- tex import "template.xbt" "replacement.dds" "output.xbt"
+dotnet run --project Dunia.Cli -- tex import-png "template.xbt" "replacement.png" "output.xbt"
 ```
 
 Planned CLI verbs are `pack` and `refs`. They are displayed in help output but intentionally return an unavailable-command error until implemented and tested.

@@ -354,6 +354,10 @@
                                                Margin="0,8,0,0"
                                                HorizontalAlignment="Center"
                                                Foreground="{StaticResource MutedTextBrush}" />
+                                    <StackPanel Margin="0,8,0,0" HorizontalAlignment="Center" Orientation="Horizontal">
+                                        <Button Margin="0,0,8,0" Click="ExportTexturePngClick" Content="Export _PNG..." />
+                                        <Button Click="CreateReplacementXbtClick" Content="Create replacement _XBT..." />
+                                    </StackPanel>
                                 </StackPanel>
                             </GroupBox>
                         </StackPanel>

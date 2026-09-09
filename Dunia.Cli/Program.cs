@@ -34,7 +34,9 @@ internal static class Program
 
         Texture operations:
           dunia tex extract <input.xbt> <output.dds>
+          dunia tex export-png <input.xbt> <output.png>
           dunia tex import <template.xbt> <input.dds> <output.xbt>
+          dunia tex import-png <template.xbt> <input.png> <output.xbt>
 
         Mesh operations:
           dunia mesh probe <input.xbg>
@@ -155,9 +157,19 @@ internal static class Program
             return await ExtractDdsAsync(xbtPath, ddsPath).ConfigureAwait(false);
         }
 
+        if (args is ["tex", "export-png", var pngSourceXbtPath, var outputPngPath])
+        {
+            return await ExportPngAsync(pngSourceXbtPath, outputPngPath).ConfigureAwait(false);
+        }
+
         if (args is ["tex", "import", var templateXbtPath, var inputDdsPath, var outputXbtPath])
         {
             return await ImportDdsAsync(templateXbtPath, inputDdsPath, outputXbtPath).ConfigureAwait(false);
+        }
+
+        if (args is ["tex", "import-png", var pngTemplatePath, var inputPngPath, var pngOutputPath])
+        {
+            return await ImportPngAsync(pngTemplatePath, inputPngPath, pngOutputPath).ConfigureAwait(false);
         }
 
         if (args is ["mesh", "probe", var xbgPath])
@@ -2477,6 +2489,128 @@ internal static class Program
                 FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
                 result = await XbtDdsImporter.ImportAsync(template, replacement, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            Console.WriteLine($"output={fullOutputPath}");
+            Console.WriteLine($"header.length={result.HeaderLength}");
+            Console.WriteLine($"dds.length={result.DdsLength}");
+            Console.WriteLine("verified=true");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static async Task<int> ExportPngAsync(string xbtPath, string pngPath)
+    {
+        string? temporaryPath = null;
+
+        try
+        {
+            string fullXbtPath = Path.GetFullPath(xbtPath);
+            string fullPngPath = Path.GetFullPath(pngPath);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(fullXbtPath, fullPngPath, comparison))
+            {
+                throw new ArgumentException("Input and output paths must be different.");
+            }
+
+            if (File.Exists(fullPngPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            temporaryPath = $"{fullPngPath}.{Guid.NewGuid():N}.tmp";
+            await using FileStream input = File.OpenRead(fullXbtPath);
+            XbtPngExportResult result;
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                result = await XbtPngExporter.ExportAsync(input, output).ConfigureAwait(false);
+                await output.FlushAsync().ConfigureAwait(false);
+                output.Flush(true);
+            }
+
+            File.Move(temporaryPath, fullPngPath, false);
+            Console.WriteLine($"output={fullPngPath}");
+            Console.WriteLine($"width={result.Width}");
+            Console.WriteLine($"height={result.Height}");
+            Console.WriteLine($"png.length={result.PngLength}");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static async Task<int> ImportPngAsync(string templateXbtPath, string pngPath, string outputXbtPath)
+    {
+        string? temporaryPath = null;
+
+        try
+        {
+            string fullTemplatePath = Path.GetFullPath(templateXbtPath);
+            string fullPngPath = Path.GetFullPath(pngPath);
+            string fullOutputPath = Path.GetFullPath(outputXbtPath);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            if (string.Equals(fullTemplatePath, fullOutputPath, comparison) ||
+                string.Equals(fullPngPath, fullOutputPath, comparison) ||
+                string.Equals(fullTemplatePath, fullPngPath, comparison))
+            {
+                throw new ArgumentException("Template, PNG, and output paths must be different.");
+            }
+
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            temporaryPath = $"{fullOutputPath}.{Guid.NewGuid():N}.tmp";
+            await using FileStream template = File.OpenRead(fullTemplatePath);
+            await using FileStream png = File.OpenRead(fullPngPath);
+            XbtDdsImportResult result;
+
+            await using (FileStream output = new(
+                temporaryPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                80 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                result = await XbtPngImporter.ImportAsync(template, png, output).ConfigureAwait(false);
                 await output.FlushAsync().ConfigureAwait(false);
                 output.Flush(true);
             }
