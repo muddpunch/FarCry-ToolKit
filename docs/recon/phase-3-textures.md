@@ -47,6 +47,11 @@ without modifying game files. Extraction produced a 9,400-byte XBT with SHA-256
 removing the 36-byte wrapper, and a 96×96 CRC-valid PNG. Mip enumeration returned one complete
 36,864-byte RGBA level. All temporary outputs were removed after verification.
 
+A visibly modified 96×96 BC3 replacement was then encoded and bound to entry 40. Its transaction plan
+SHA-256 is `C5BBF7D580272572F38A897BB1CCC2330507756B9ADC9D636B3979C7C847FCDA`; Dry-run and new-pair
+Copy both completed semantic validation. Source FAT and DAT hashes remained unchanged. The reproducible,
+non-destructive validation package is stored in `artifacts/phase-3-texture-validation`.
+
 ## Operational validation backlog
 
 In-game validation of a visibly modified texture remains a release-validation task because it requires
