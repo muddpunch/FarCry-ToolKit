@@ -88,7 +88,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | FC5 CRC64 path hashing and name-list resolver | Implemented |
 | Uncompressed DAT payload extraction | Implemented |
 | LZ4 DAT payload extraction | Implemented |
-| FAT/DAT extraction and rebuilding | Safe rebuild-to-new-pair implemented; in-place apply disabled |
+| FAT/DAT extraction and rebuilding | Safe rebuild-to-new-pair and verified in-place Apply implemented |
 | FCB v2 parser | Implemented and validated on a real FC5 fixture |
 | FCB archive signature scanner | Implemented |
 | FCB v2 writer and byte-exact verifier | Implemented; validated on uncompressed and LZ4-backed real FC5 fixtures |
@@ -112,7 +112,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
 | CLI `probe`, `list`, `get`, `tex extract`, `tex export-png`, `tex import`, and `tex import-png` commands | Implemented |
 | Directory pack and resource-reference CLI commands | Implemented with exact replacement validation and bounded streaming scans |
-| WPF archive browser | Implemented with paging, search, name discovery, Pack, reference scanning, verified texture replacement, and mesh preview |
+| WPF archive browser | Implemented with paging, search, name discovery, Pack, reference scanning, staged multi-texture Apply/Discard, and mesh preview |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 
@@ -182,6 +182,7 @@ Warnings are treated as errors.
 - `XbtPngExporter` and `XbtPngImporter` provide CRC-validated 8-bit PNG conversion with template-driven DXGI compression and mip generation.
 - `XbtMipDecoder` decodes bounded complete mip chains; `XbtMipPngWriter` exports any selected level as a CRC-protected RGBA PNG.
 - `XbtArchiveReplacementService` binds Plan, Dry-run, Copy, and Apply to exact source/replacement hashes and validates the published XBT before committing a transaction.
+- `XbtArchiveTransactionService` binds multiple staged XBT replacements to one deterministic plan hash, revalidates the source under the archive lock, and validates every published texture before rollback removal.
 - `FatV10DirectoryPackService` maps normalized relative paths to archive CRC64 identities, stages every input, rebuilds a new pair, and verifies every published replacement.
 - `DuniaResourceReferenceScanner` finds archive resource hashes in binary payloads across streaming buffer boundaries in little- and big-endian layouts.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.

@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Dunia.Formats.Archives;
 using Dunia.Formats.Archives.FatV10;
+using Dunia.Formats.Changes;
 using Dunia.Formats.Hashing;
 using Dunia.Formats.Meshes;
 using Dunia.Formats.Textures;
@@ -24,6 +25,8 @@ public partial class MainWindow : Window, IDisposable
     private const int PageSize = 5_000;
 
     private readonly DispatcherTimer _filterTimer;
+    private readonly PendingChangeSet<int, PendingTextureReplacement> _pendingTextures = new();
+    private readonly ReplacementStagingStore _textureStagingStore;
     private FatV10Index? _index;
     private DuniaNameResolver? _resolver;
     private string? _nameCatalogPath;
@@ -41,6 +44,7 @@ public partial class MainWindow : Window, IDisposable
     public MainWindow()
     {
         InitializeComponent();
+        _textureStagingStore = new(Path.Combine(Path.GetTempPath(), "DuniaToolkit", "texture-pending"));
         TextureChannelSelector.ItemsSource = Enum.GetValues<TextureChannel>()
             .Select(channel => new TextureChannelOption(channel, channel switch
             {
@@ -87,7 +91,7 @@ public partial class MainWindow : Window, IDisposable
             InitialDirectory = GetDefaultArchiveDirectory(gameDirectory),
         };
 
-        if (dialog.ShowDialog(this) == true)
+        if (dialog.ShowDialog(this) == true && ConfirmDiscardPendingTextures(dialog.FileName))
         {
             await LoadArchiveAsync(dialog.FileName);
         }
@@ -974,7 +978,6 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation = new CancellationTokenSource();
         CancellationToken token = _operationCancellation.Token;
         CancelButton.Visibility = Visibility.Visible;
-        bool applied = false;
         SetBusy(true, "Preparing replacement texture...");
         try
         {
@@ -995,31 +998,100 @@ public partial class MainWindow : Window, IDisposable
                 throw new InvalidDataException("Texture dry-run did not reproduce the planned transaction.");
             }
 
+            replacement.Position = 0;
+            StagedReplacement staged = await _textureStagingStore.StageAsync(
+                replacement, $"{entry.Index:D6}.xbt", token);
+            PendingTextureReplacement? previous = _pendingTextures.Snapshot().Items
+                .FirstOrDefault(item => item.Key == entry.Index)?.Change;
+            _pendingTextures.Stage(
+                entry.Index,
+                new(entry.Index, entry.Entry.NameHash, entry.Name, staged, plan));
+            if (previous is not null)
+            {
+                TryRemoveStagedReplacement(previous.Replacement);
+            }
+
+            UpdatePendingTextureUi();
+            StatusText.Text = $"Staged verified texture replacement for {entry.Name}";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation cancelled";
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex.Message);
+        }
+        finally
+        {
+            _operationCancellation.Dispose();
+            _operationCancellation = null;
+            CancelButton.Visibility = Visibility.Collapsed;
+            SetBusy(false);
+        }
+
+    }
+
+    private async void ApplyPendingTexturesClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy || _fatPath is null || _datPath is null)
+        {
+            return;
+        }
+
+        PendingChangeSnapshot<int, PendingTextureReplacement> snapshot = _pendingTextures.Snapshot();
+        if (snapshot.Items.Count == 0)
+        {
+            return;
+        }
+
+        var source = new ArchivePair(_fatPath, _datPath);
+        XbtArchiveTransactionItem[] items = snapshot.Items
+            .Select(item => new XbtArchiveTransactionItem(
+                item.Key,
+                item.Change.ResourceNameHash,
+                item.Change.Plan.SourcePayloadSha256,
+                item.Change.Plan.ReplacementPayloadSha256,
+                item.Change.Replacement))
+            .ToArray();
+        _operationCancellation = new CancellationTokenSource();
+        CancellationToken token = _operationCancellation.Token;
+        CancelButton.Visibility = Visibility.Visible;
+        bool applied = false;
+        SetBusy(true, "Planning staged texture transaction...");
+        try
+        {
+            XbtArchiveTransactionPlan plan = await XbtArchiveTransactionService.PlanAsync(
+                source, items, _textureStagingStore, token);
+            string names = string.Join("\n", snapshot.Items.Take(12).Select(item => $"• {item.Change.Name}"));
+            if (snapshot.Items.Count > 12)
+            {
+                names += $"\n• …and {snapshot.Items.Count - 12:N0} more";
+            }
+
             MessageBoxResult confirmation = MessageBox.Show(
                 this,
-                $"Replace:\n{entry.Name}\n\nArchive:\n{source.FatPath}\n\n" +
-                $"Verified plan: {plan.PlanSha256[..16]}...\n" +
-                $"Replacement size: {FormatBytes(plan.ReplacementLength)}\n\n" +
+                $"Apply {snapshot.Items.Count:N0} verified texture replacement(s)?\n\n{names}\n\n" +
+                $"Plan: {plan.PlanSha256[..16]}...\nArchive: {source.FatPath}\n\n" +
                 "The game must be closed. Immutable .original backups will be created before the first write.",
-                "Apply verified texture transaction",
+                "Apply staged texture transaction",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
                 MessageBoxResult.No);
             if (confirmation != MessageBoxResult.Yes)
             {
-                StatusText.Text = "Verified texture transaction not applied";
+                StatusText.Text = "Staged texture transaction not applied";
                 return;
             }
 
-            replacement.Position = 0;
-            StatusText.Text = "Applying verified texture transaction...";
-            FatV10ArchivePatchApplyResult result = await XbtArchiveReplacementService.ApplyAsync(
-                source, plan.PlanSha256, entry.Index, entry.Entry.NameHash,
-                replacement, temporaryRoot, token);
+            StatusText.Text = "Applying staged texture transaction...";
+            FatV10ArchivePatchApplyResult result = await XbtArchiveTransactionService.ApplyAsync(
+                source, plan.PlanSha256, items, _textureStagingStore, token);
             applied = true;
+            ClearPendingTextures();
             StatusText.Text = result.Backup.CreatedAny
-                ? "Texture replaced and immutable backups created"
-                : "Texture replaced and existing immutable backups retained";
+                ? "Texture transaction applied and immutable backups created"
+                : "Texture transaction applied and existing immutable backups retained";
         }
         catch (OperationCanceledException)
         {
@@ -1041,6 +1113,78 @@ public partial class MainWindow : Window, IDisposable
         {
             await LoadArchiveAsync(source.FatPath);
         }
+    }
+
+    private void DiscardPendingTexturesClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        int count = _pendingTextures.Count;
+        ClearPendingTextures();
+        StatusText.Text = $"Discarded {count:N0} pending texture replacement(s)";
+    }
+
+    private void ClearPendingTextures()
+    {
+        PendingChangeSnapshot<int, PendingTextureReplacement> snapshot = _pendingTextures.Snapshot();
+        _pendingTextures.Discard();
+        foreach (PendingChangeEntry<int, PendingTextureReplacement> item in snapshot.Items)
+        {
+            TryRemoveStagedReplacement(item.Change.Replacement);
+        }
+
+        UpdatePendingTextureUi();
+    }
+
+    private void TryRemoveStagedReplacement(StagedReplacement replacement)
+    {
+        try
+        {
+            _textureStagingStore.Remove(replacement);
+        }
+        catch (IOException)
+        {
+            // Session disposal retries cleanup of any staged file still tracked by the store.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private void UpdatePendingTextureUi()
+    {
+        PendingChangeSnapshot<int, PendingTextureReplacement> snapshot = _pendingTextures.Snapshot();
+        PendingTexturePanel.Visibility = snapshot.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        PendingTextureCountText.Text = snapshot.Items.Count.ToString("N0", CultureInfo.CurrentCulture);
+        PendingTextureList.ItemsSource = snapshot.Items.Select(item => item.Change).ToArray();
+        ApplyPendingTexturesButton.IsEnabled = !_isBusy && snapshot.Items.Count > 0;
+        DiscardPendingTexturesButton.IsEnabled = !_isBusy && snapshot.Items.Count > 0;
+    }
+
+    private bool ConfirmDiscardPendingTextures(string nextFatPath)
+    {
+        if (_pendingTextures.Count == 0 ||
+            string.Equals(_fatPath, Path.GetFullPath(nextFatPath), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (MessageBox.Show(
+                this,
+                "Opening another archive will discard all pending texture replacements.",
+                "Discard pending replacements?",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.Cancel) != MessageBoxResult.OK)
+        {
+            return false;
+        }
+
+        ClearPendingTextures();
+        return true;
     }
 
     private async Task CreateReplacementXbtAsync(
@@ -1190,7 +1334,10 @@ public partial class MainWindow : Window, IDisposable
             fatPath is not null &&
             await EnsureGameExecutableAsync())
         {
-            await LoadArchiveAsync(fatPath);
+            if (ConfirmDiscardPendingTextures(fatPath))
+            {
+                await LoadArchiveAsync(fatPath);
+            }
         }
     }
 
@@ -1260,6 +1407,8 @@ public partial class MainWindow : Window, IDisposable
         EditFcbButton.IsEnabled = !busy;
         FindReferencesButton.IsEnabled = !busy;
         PackDirectoryMenuItem.IsEnabled = !busy && _index is not null;
+        ApplyPendingTexturesButton.IsEnabled = !busy && _pendingTextures.Count > 0;
+        DiscardPendingTexturesButton.IsEnabled = !busy && _pendingTextures.Count > 0;
         Mouse.OverrideCursor = busy ? Cursors.Wait : null;
         UpdatePageControls();
 
@@ -1293,6 +1442,24 @@ public partial class MainWindow : Window, IDisposable
 
     private void CancelClick(object sender, RoutedEventArgs e) => _operationCancellation?.Cancel();
 
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (!_isDisposed && _pendingTextures.Count > 0 &&
+            MessageBox.Show(
+                this,
+                "Closing the toolkit will discard all pending texture replacements.",
+                "Discard pending replacements?",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.Cancel) != MessageBoxResult.OK)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         Dispose();
@@ -1311,6 +1478,7 @@ public partial class MainWindow : Window, IDisposable
         _operationCancellation?.Dispose();
         Loaded -= WindowLoaded;
         PreviewKeyDown -= WindowPreviewKeyDown;
+        _textureStagingStore.Dispose();
         _isDisposed = true;
         GC.SuppressFinalize(this);
     }
@@ -1347,6 +1515,16 @@ public partial class MainWindow : Window, IDisposable
     private sealed record TextureMipOption(int Level, string Label);
 
     private sealed record TextureChannelOption(TextureChannel Channel, string Label);
+
+    private sealed record PendingTextureReplacement(
+        int EntryIndex,
+        ulong ResourceNameHash,
+        string Name,
+        StagedReplacement Replacement,
+        XbtArchiveReplacementPlan Plan)
+    {
+        public string Summary => $"{Name}  •  {FormatBytes(Plan.ReplacementLength)}  •  {Plan.PlanSha256[..12]}…";
+    }
 
     private sealed record ArchiveEntryRow(int Index, FatV10Entry Entry, string? ResolvedName)
     {

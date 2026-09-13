@@ -14,7 +14,7 @@ Real `common.fat` entry 1087 (`graphics\_common\_textures\generic\mask\blackarra
 
 Real `common.fat` entry 40 (`ui\zeta\06_icons\worldmapcompass\tx_animal_fish_salmon.xbt`) completed `XBT → PNG → DDS → XBT → PNG`. Both XBT files were 9,400 bytes, retained the exact 36-byte wrapper, resolved as 96×96 BC3 with one mip, and decoded successfully after re-encoding.
 
-The WPF texture preview exposes atomic **Export PNG**, **Create replacement XBT**, and **Replace in archive** actions. PNG and DDS replacements use the same validated format-library paths as the CLI and preserve the original wrapper.
+The WPF texture preview exposes atomic **Export PNG**, **Create replacement XBT**, and **Stage replacement** actions. PNG and DDS replacements use the same validated format-library paths as the CLI and preserve the original wrapper.
 
 ## Archive transaction — 2026-09-09
 
@@ -22,7 +22,7 @@ The WPF texture preview exposes atomic **Export PNG**, **Create replacement XBT*
 
 Copy refuses existing destinations and removes both outputs if post-publication texture validation fails. Apply fingerprints and locks the source pair, revalidates the planned source payload before building, creates immutable `.original` backups, and retains rollback files until both byte-exact replacement validation and XBT decoding succeed.
 
-The WPF action converts PNG or DDS input into a template-compatible XBT in memory, executes Plan and Dry-run, displays the bound plan hash, requires an explicit warning confirmation, then calls the transaction facade. The CLI exposes the same boundary through `tex archive-plan`, `tex archive-dry-run`, `tex archive-copy`, and confirmed `tex archive-apply`.
+The WPF action converts PNG or DDS input into a template-compatible XBT in memory, executes Plan and Dry-run, then stages the verified bytes without modifying the archive. The CLI exposes the single-entry boundary through `tex archive-plan`, `tex archive-dry-run`, `tex archive-copy`, and confirmed `tex archive-apply`.
 
 ## Mip and channel inspection — 2026-09-09
 
@@ -31,6 +31,10 @@ The WPF action converts PNG or DDS input into a template-compatible XBT in memor
 The WPF preview now selects individual mip levels and isolates RGBA, opaque RGB, red, green, blue, or alpha output without re-decoding the source texture. Channel-only views render as opaque grayscale so mask data remains directly comparable.
 
 The real `common.fat` entry 40 smoke test decoded one 96×96 mip, exported `mip-00-96x96.png` at 5,253 bytes, and removed its temporary extraction/export directory after verification.
+
+## GUI texture transactions — 2026-09-10
+
+The WPF browser stages one or more independently converted and dry-run-verified XBT replacements. Re-staging an entry atomically supersedes its previous pending payload. Apply binds the ordered set to one SHA-256 transaction plan, revalidates it under the FAT/DAT source lock, creates immutable `.original` backups, publishes once, and validates every resulting XBT before rollback removal. Discard and archive-switch cleanup remove staged session files without modifying the archive.
 
 ## Next gate
 

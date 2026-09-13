@@ -157,6 +157,49 @@
             </StatusBarItem>
         </StatusBar>
 
+        <Border x:Name="PendingTexturePanel"
+                DockPanel.Dock="Bottom"
+                Padding="12,8"
+                Background="#25211A"
+                BorderBrush="#6C562D"
+                BorderThickness="0,1,0,0"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,14,0" VerticalAlignment="Center">
+                    <TextBlock FontWeight="SemiBold" Text="Pending textures" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="PendingTextureCountText" FontWeight="SemiBold" Text="0" />
+                        <TextBlock Margin="4,0,0,0" Foreground="{StaticResource MutedTextBrush}" Text="verified" />
+                    </StackPanel>
+                </StackPanel>
+                <ListBox x:Name="PendingTextureList"
+                         Grid.Column="1"
+                         MaxHeight="96"
+                         DisplayMemberPath="Summary"
+                         ScrollViewer.CanContentScroll="True"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         AutomationProperties.Name="Pending texture replacements" />
+                <StackPanel Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center" Orientation="Horizontal">
+                    <Button x:Name="DiscardPendingTexturesButton"
+                            Margin="0,0,8,0"
+                            Padding="12,5"
+                            Click="DiscardPendingTexturesClick"
+                            Content="_Discard"
+                            AutomationProperties.Name="Discard all pending texture replacements" />
+                    <Button x:Name="ApplyPendingTexturesButton"
+                            Padding="12,5"
+                            Click="ApplyPendingTexturesClick"
+                            Content="_Apply"
+                            AutomationProperties.Name="Apply all pending texture replacements" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -389,8 +432,8 @@
                                         <Button x:Name="CreateReplacementXbtButton" Margin="0,0,8,0"
                                                 Click="CreateReplacementXbtClick" Content="Create replacement _XBT..." />
                                         <Button x:Name="ReplaceTextureButton" Click="ReplaceTextureClick"
-                                                Content="_Replace in archive..."
-                                                AutomationProperties.Name="Plan, verify, and apply texture replacement" />
+                                                Content="_Stage replacement..."
+                                                AutomationProperties.Name="Plan, verify, and stage texture replacement" />
                                     </StackPanel>
                                 </StackPanel>
                             </GroupBox>
