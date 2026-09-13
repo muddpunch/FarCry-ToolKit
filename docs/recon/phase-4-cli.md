@@ -37,3 +37,6 @@ The Release CLI was also exercised against the installed 3,401-entry `common.fat
 entry 40. `verify roundtrip` reproduced the 68,052-byte FAT and 182,265,474-byte DAT byte-for-byte with
 matching SHA-256 values; `verify replacement` preserved every untouched entry and the complete original
 DAT prefix while reproducing the selected payload hash exactly.
+
+Framework-dependent `win-x64` Release publication was validated for both `Dunia.Cli.exe` and
+`Dunia.Toolkit.exe`; the published CLI help executed successfully from the isolated output directory.
