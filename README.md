@@ -75,7 +75,7 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | SHA-256 verified replacement staging | Implemented |
 | FAT v10 entry parser | Implemented and validated against all 16 local FC5 indexes |
 | FAT v10 index writer | Implemented; byte-exact synthetic round-trip covered |
-| Append-only FAT/DAT patch builder | Implemented; production publication still disabled |
+| Append-only FAT/DAT patch builder | Implemented with safe new-pair and transactional in-place publication |
 | Validated rebuild-to-new-pair file service | Implemented; never overwrites existing files |
 | Transactional in-place Apply service | Implemented; source-pair locking and SHA-256 stability checks included |
 | Confirmed in-place CLI Apply | Implemented; requires index plus expected hash |
@@ -113,6 +113,8 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | CLI `probe`, `list`, `get`, `tex extract`, `tex export-png`, `tex import`, and `tex import-png` commands | Implemented |
 | Directory pack and resource-reference CLI commands | Implemented with exact replacement validation and bounded streaming scans |
 | WPF archive browser | Implemented with paging, search, name discovery, Pack, reference scanning, staged multi-texture Apply/Discard, and mesh preview |
+| Phase 3 texture layer | Implementation complete; manual in-game render validation remains release testing |
+| Phase 4 CLI | Complete; advertised verb contract and safety invariants are test-covered |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 

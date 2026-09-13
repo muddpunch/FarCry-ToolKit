@@ -100,6 +100,8 @@ internal static class Program
           dunia hash audit <archive.fat> <paths.txt>
         """;
 
+    internal static string HelpText => Usage;
+
     public static async Task<int> Main(string[] args)
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")

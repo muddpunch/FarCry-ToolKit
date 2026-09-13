@@ -1,5 +1,8 @@
 # Phase 3: texture recon
 
+**Implementation status: complete.** XBT/DDS extraction and import, PNG round-trip, mip inspection,
+single-entry CLI transactions, and staged multi-entry WPF transactions satisfy the Phase 3 scope.
+
 ## DDS import — 2026-09-09
 
 `XbtDdsImporter` validates the `TBX\0` wrapper and its declared DDS offset, preserves the complete wrapper byte-for-byte, and replaces only the embedded DDS. Import is rejected before writing when dimensions, depth, mip count, pixel format, DX10 resource layout, cubemap flags, or total DDS length differ from the template.
@@ -36,6 +39,16 @@ The real `common.fat` entry 40 smoke test decoded one 96×96 mip, exported `mip-
 
 The WPF browser stages one or more independently converted and dry-run-verified XBT replacements. Re-staging an entry atomically supersedes its previous pending payload. Apply binds the ordered set to one SHA-256 transaction plan, revalidates it under the FAT/DAT source lock, creates immutable `.original` backups, publishes once, and validates every resulting XBT before rollback removal. Discard and archive-switch cleanup remove staged session files without modifying the archive.
 
-## Next gate
+## Final implementation verification — 2026-09-13
 
-Validate a copied archive with a visibly modified texture in-game, then record the exact build, archive, entry, and observed render result.
+The Release CLI revalidated real compressed `common.fat` entry 40 directly from the local FC5 install
+without modifying game files. Extraction produced a 9,400-byte XBT with SHA-256
+`761D5D0C6B8EA77146F77AD2926CAC6696F4E4E3541C349A43BDA965C3F80E4D`, a 9,364-byte DDS after
+removing the 36-byte wrapper, and a 96×96 CRC-valid PNG. Mip enumeration returned one complete
+36,864-byte RGBA level. All temporary outputs were removed after verification.
+
+## Operational validation backlog
+
+In-game validation of a visibly modified texture remains a release-validation task because it requires
+manual game execution. It is not an implementation gate. Continue to use copied archives until the exact
+game build, archive, entry, replacement hash, and observed render result have been recorded.

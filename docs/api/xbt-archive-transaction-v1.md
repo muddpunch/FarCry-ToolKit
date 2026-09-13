@@ -1,6 +1,8 @@
 # XBT archive transaction API v1
 
-`XbtArchiveReplacementService` is the stable backend boundary for CLI and WPF texture replacement. Consumers must not compose archive staging, rebuilding, backup, publication, or rollback primitives directly.
+`XbtArchiveReplacementService` is the stable single-entry backend boundary used by the CLI.
+`XbtArchiveTransactionService` binds the WPF pending set into one deterministic multi-entry Apply.
+Consumers must not compose archive rebuilding, backup, publication, or rollback primitives directly.
 
 ## Contract
 
@@ -43,6 +45,27 @@ public static class XbtArchiveReplacementService
 }
 ```
 
+The WPF session stages verified payloads with `ReplacementStagingStore`, then uses this multi-entry
+boundary:
+
+```csharp
+public static class XbtArchiveTransactionService
+{
+    public static Task<XbtArchiveTransactionPlan> PlanAsync(
+        ArchivePair source,
+        IReadOnlyCollection<XbtArchiveTransactionItem> items,
+        ReplacementStagingStore stagingStore,
+        CancellationToken cancellationToken = default);
+
+    public static Task<FatV10ArchivePatchApplyResult> ApplyAsync(
+        ArchivePair target,
+        string expectedPlanSha256,
+        IReadOnlyCollection<XbtArchiveTransactionItem> items,
+        ReplacementStagingStore stagingStore,
+        CancellationToken cancellationToken = default);
+}
+```
+
 ## Invariants
 
 - All input XBT payloads must decode successfully before a plan is returned.
@@ -53,3 +76,5 @@ public static class XbtArchiveReplacementService
 - Apply creates or retains immutable `.original` backups before publication.
 - Published replacement bytes must match the staged SHA-256 and length, then decode as XBT before rollback files are removed.
 - Any publication or semantic validation failure restores both pre-transaction archive files.
+- Multi-entry plans canonicalize replacements by entry index and reject duplicate indexes.
+- Multi-entry Apply re-plans under the source lock and validates every published XBT before rollback removal.
