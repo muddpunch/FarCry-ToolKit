@@ -27,6 +27,7 @@ internal static class Program
           tex       Texture operations
           mips      Inspect or export an XBT mip chain
           mesh      Mesh operations
+          fcb       FarCryBinary inspection and mutation operations
           pack      Pack changed resources
           rebuild   Rebuild an archive pair
           refs      Resolve resource references
@@ -49,6 +50,7 @@ internal static class Program
 
         Mesh operations:
           dunia mesh probe <input.xbg>
+          dunia mesh export-fbx <input.xbg> <output.fbx>
 
         FCB operations:
           dunia fcb probe <input.fcb>
@@ -236,6 +238,11 @@ internal static class Program
         if (args is ["mesh", "probe", var xbgPath])
         {
             return ProbeXbg(xbgPath);
+        }
+
+        if (args is ["mesh", "export-fbx", var exportXbgPath, var outputFbxPath])
+        {
+            return ExportFbx(exportXbgPath, outputFbxPath);
         }
 
         if (args is ["fcb", "probe", var fcbPath])
@@ -2560,6 +2567,63 @@ internal static class Program
         {
             Console.Error.WriteLine(ex.Message);
             return 1;
+        }
+    }
+
+    private static int ExportFbx(string xbgPath, string fbxPath)
+    {
+        string? temporaryPath = null;
+        try
+        {
+            string fullInputPath = Path.GetFullPath(xbgPath);
+            string fullOutputPath = Path.GetFullPath(fbxPath);
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(fullInputPath, fullOutputPath, comparison))
+            {
+                throw new ArgumentException("Input and output paths must be different.");
+            }
+
+            if (File.Exists(fullOutputPath))
+            {
+                throw new IOException("Output file already exists.");
+            }
+
+            string? directory = Path.GetDirectoryName(fullOutputPath);
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException("Output directory does not exist.");
+            }
+
+            using FileStream input = File.OpenRead(fullInputPath);
+            XbgMeshPreview mesh = XbgMeshPreviewReader.Read(input);
+            temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullOutputPath)}.{Guid.NewGuid():N}.tmp");
+            using (var output = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                XbgFbxExporter.Export(mesh, output);
+                output.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, fullOutputPath, false);
+            temporaryPath = null;
+            Console.WriteLine($"path={fullOutputPath}");
+            Console.WriteLine($"lods={mesh.Lods.Count}");
+            Console.WriteLine($"sections={mesh.Lods.Sum(lod => lod.Sections.Count)}");
+            Console.WriteLine($"materials={mesh.Materials.Count}");
+            return 0;
+        }
+        catch (Exception ex) when (IsExpectedCliError(ex))
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                File.Delete(temporaryPath);
+            }
         }
     }
 

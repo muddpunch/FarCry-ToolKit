@@ -6,7 +6,7 @@ public sealed class CliHelpContractTests
 {
     private static readonly string[] RequiredTopLevelCommands =
     [
-        "probe", "list", "entry", "get", "tex", "mips", "pack", "rebuild", "refs", "hash", "verify",
+        "probe", "list", "entry", "get", "tex", "mips", "mesh", "fcb", "pack", "rebuild", "refs", "hash", "verify",
     ];
 
     [Fact]
@@ -30,6 +30,7 @@ public sealed class CliHelpContractTests
     [InlineData("mips list")]
     [InlineData("mips export")]
     [InlineData("mesh probe")]
+    [InlineData("mesh export-fbx")]
     [InlineData("verify roundtrip")]
     [InlineData("verify replacement")]
     public void HelpRetainsImplementedSubcommands(string command) =>

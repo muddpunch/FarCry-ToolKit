@@ -1,5 +1,8 @@
 # Phase 0: archive recon
 
+**Status: complete.** FAT v10 layout, raw LZ4 payload framing, byte-exact round-trip, replacement
+publication, independent extraction, in-game loading, and rollback were validated against real FC5 data.
+
 ## Confirmed
 
 - Dunia archive indexes use a FAT/DAT pair.
@@ -8,14 +11,14 @@
 - FCBConverter documentation identifies v9 with FC3/FC4 and v10 with FC5/FCND.
 - FCBConverter and FC5ArchiveViewer are GPLv3. Their code and bundled name/hash data must not be copied into a permissive toolkit.
 
-## Evidence still required
+## Original evidence plan
 
 - Unmodified FC5 `.fat/.dat` fixture pairs, including one empty 32-byte FAT and one archive containing compressed entries.
 - Extraction manifests and SHA-256 hashes from FCBConverter and an independent Ekey/ZenHAX tool for the same fixture.
 - Hex/field annotation for the v10 header and every v10 entry variant.
 - Compression framing confirmation for uncompressed and LZ4 entries.
 
-## Acceptance gate
+## Original acceptance gate
 
 Metadata parsing may proceed from the confirmed zlib-licensed serializer layout and local bounds validation. Payload extraction and archive writes remain gated on matching extracted byte hashes from independent tools. Fixtures derived from game files stay local and are never committed.
 
@@ -66,6 +69,10 @@ This validates the internal replacement pipeline against a real LZ4 entry. CLI i
 An independently built `Gibbed.FarCry5.Unpack` was then run against the rebuilt temporary `common` pair with a filter for `000ADB1D29834E28`. It parsed all 3,401 entries and extracted the replacement as `__UNKNOWN\gfx\000ADB1D29834E28.xbt`. The independent output was 2,488 bytes and matched the source payload SHA-256 exactly: `56929F8BF8D6AFE5524CEB8B34015B1C3CF8637B380A1261E6ACC3F6AAA56B19`.
 
 This clears the independent-extractor gate for explicit in-place CLI Apply. The CLI requires `--confirm-write`, an entry index, and its expected 64-bit name hash; a mismatch aborts before staging, backup, or publication. Actual game-install modification remains experimental until a copied modified pair passes a game-load test.
+
+The remaining texture publication gate was cleared on 2026-09-14: a visibly modified BC3/XBT payload
+was applied to real `common.fat` entry 40, rendered successfully in Far Cry 5, and the original FAT/DAT
+pair was then restored byte-for-byte from immutable backups. See `phase-3-textures.md` for bound hashes.
 
 ## Sources
 

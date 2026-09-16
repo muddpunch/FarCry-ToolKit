@@ -1,9 +1,11 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 using Dunia.Formats.Meshes;
+using Microsoft.Win32;
 using NumericsVector3 = System.Numerics.Vector3;
 
 namespace Dunia.Toolkit;
@@ -24,6 +26,7 @@ public partial class MeshPreviewWindow : Window
 
     private readonly DirectionalLight _cameraLight = new(Colors.White, new Vector3D(-1, 1, -1));
     private readonly XbgMeshPreview _mesh;
+    private readonly string _displayName;
     private Point3D _target;
     private Point _lastPointer;
     private double _yaw = -Math.PI / 4;
@@ -36,6 +39,7 @@ public partial class MeshPreviewWindow : Window
     {
         ArgumentNullException.ThrowIfNull(mesh);
         _mesh = mesh;
+        _displayName = displayName;
         InitializeComponent();
         Title = $"Mesh preview - {displayName}";
         MeshNameText.Text = displayName;
@@ -46,6 +50,7 @@ public partial class MeshPreviewWindow : Window
                 $"LOD {index}  •  {lod.Positions.Count:N0} vertices  •  {lod.TriangleCount:N0} triangles"))
             .ToArray();
         LodSelector.SelectedIndex = 0;
+        MaterialsList.ItemsSource = mesh.Materials;
         Loaded += WindowLoaded;
     }
 
@@ -141,6 +146,51 @@ public partial class MeshPreviewWindow : Window
     {
         ResetView();
         MeshViewport.Focus();
+    }
+
+    private void ExportFbxClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export mesh as FBX",
+            Filter = "Autodesk FBX (*.fbx)|*.fbx",
+            AddExtension = true,
+            DefaultExt = ".fbx",
+            FileName = $"{Path.GetFileNameWithoutExtension(_displayName)}.fbx",
+            OverwritePrompt = false,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        string fullPath = Path.GetFullPath(dialog.FileName);
+        if (File.Exists(fullPath))
+        {
+            MessageBox.Show(this, "The destination already exists.", "Dunia Toolkit", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        string temporaryPath = $"{fullPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var output = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                XbgFbxExporter.Export(_mesh, output);
+                output.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, fullPath, false);
+            MessageBox.Show(this, $"FBX exported to:\n{fullPath}", "Dunia Toolkit", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Dunia Toolkit", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 
     private void ResetView()

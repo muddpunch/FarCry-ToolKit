@@ -52,8 +52,19 @@ SHA-256 is `C5BBF7D580272572F38A897BB1CCC2330507756B9ADC9D636B3979C7C847FCDA`; D
 Copy both completed semantic validation. Source FAT and DAT hashes remained unchanged. The reproducible,
 non-destructive validation package is stored in `artifacts/phase-3-texture-validation`.
 
-## Operational validation backlog
+## In-game validation — 2026-09-14
 
-In-game validation of a visibly modified texture remains a release-validation task because it requires
-manual game execution. It is not an implementation gate. Continue to use copied archives until the exact
-game build, archive, entry, replacement hash, and observed render result have been recorded.
+The verified replacement was transactionally applied to the installed `common.fat` entry 40 while Far
+Cry 5 and Ubisoft Connect were closed. Existing immutable `.original` files matched the expected source
+FAT/DAT SHA-256 values and were retained. The live pair matched the previously verified copied archive:
+
+- FAT SHA-256: `17D4F4CAC8EE06612E0F8AE44ECC79BC7289F68ABF65197D535BF4CA36D88D82`
+- DAT SHA-256: `45631D65B46E52A7736A1688DBEAAE31B928FEBE867658DA910A79839DF8D7C5`
+- replacement SHA-256: `6E095382C551AD50AF9CFD5324F6FA41D19E4D892487F35737394FF1A7B7D8F7`
+
+Far Cry 5 launched successfully through Ubisoft Connect game ID 1803. The operator inspected the target
+fish/salmon map icon and reported **PASS** for the expected neon-magenta render with a lime diagonal
+stripe. After the test, `restore --confirm-write` restored both archive files from immutable backups.
+The restored live FAT/DAT hashes match the backups byte-for-byte and no rollback files remain.
+
+Phase 3 implementation and operational validation are complete.

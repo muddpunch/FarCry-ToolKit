@@ -1,27 +1,27 @@
 # Dunia Toolkit
 
-Work-in-progress modding toolkit for the PC version of **Far Cry 5**, built with C#/.NET 9 and WPF.
+Modding toolkit for the PC version of **Far Cry 5**, built with C#/.NET 9 and WPF.
 
 The project aims to provide one safe application for browsing, extracting, inspecting, replacing, and rebuilding local Dunia 2 game resources. It targets offline game files only and does not interact with multiplayer services, anti-cheat, process memory, or a running game.
 
 > [!WARNING]
-> Archive writing remains experimental. Validate replacements with `apply --dry-run` and use copied archives until the modified pair has passed an actual game-load test.
+> Archive writing is safety-gated. Always dry-run new replacements, keep verified `.original` backups, and close the game before Apply. FCB and XBT writes have passed real game-load validation.
 
-## What it will do
+## What it does
 
 - Browse Far Cry 5 `.fat`/`.dat` archive pairs without unpacking the entire game.
 - Search for resources across related archives.
 - Extract individual files or complete archives.
 - Inspect and round-trip FCB (`FarCryBinary`) trees with hash-to-name resolution.
 - Preview every `.xbt` mip level with RGBA/RGB/R/G/B/A channel isolation and export DDS/PNG data.
-- Preview supported `.xbg` meshes and switch LODs in an interactive 3D viewport with orbit, pan, zoom, and keyboard controls.
+- Preview supported `.xbg` meshes, inspect material references, switch LODs in an interactive 3D viewport, and export verified static geometry to FBX 7.4.
 - Replace textures with automatic validation and conversion.
 - Stage modifications in memory before writing anything to disk.
 - Show every pending change and support explicit **Apply** or **Discard** actions.
 - Create permanent `.original` backups before the first archive write.
 - Expose the same core operations through a WPF application and CLI.
 
-FBX export, material inspection, weather, and time-of-day editing remain research targets. Unsupported XBG layouts are rejected explicitly instead of rendering unverified geometry.
+Skinning/skeleton export, XBM mutation, and specialized weather/time-of-day editing remain unsupported after the Phase 6 recon gate found no verified clean-room schemas. Unsupported layouts are rejected explicitly.
 
 ## How Dunia archives work
 
@@ -109,12 +109,18 @@ In-place CLI writes require an explicit `--confirm-write`, expected resource has
 | DDS → XBT import | Implemented with byte-exact wrapper preservation and strict layout validation |
 | PNG → DDS/XBT re-encode | Implemented for validated 2D BC1/BC2/BC3/BC4/BC5/BC7 DXGI templates |
 | FC5 XBG geometry decoder | Implemented for validated multi-buffer layouts and every declared LOD; safety-gated |
-| WPF mesh viewer | Implemented with LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
-| CLI `probe`, `list`, `get`, `tex extract`, `tex export-png`, `tex import`, and `tex import-png` commands | Implemented |
+| FBX 7.4 static mesh export | Implemented for every decoded LOD, section, normal, UV, and material reference |
+| WPF mesh viewer | Implemented with material references, FBX export, LOD selection, orbit, pan, zoom, fit-to-view, and keyboard controls |
+| CLI archive, texture, FCB, mip, mesh, pack, reference, hash, and verification commands | Implemented |
 | Directory pack and resource-reference CLI commands | Implemented with exact replacement validation and bounded streaming scans |
 | WPF archive browser | Implemented with paging, search, name discovery, Pack, reference scanning, staged multi-texture Apply/Discard, and mesh preview |
-| Phase 3 texture layer | Implementation complete; manual in-game render validation remains release testing |
+| Phase 0 recon | Complete; FAT v10, raw LZ4, independent extraction, real game load, and restore validated |
+| Phase 1 archive layer | Complete; byte-exact rebuild, transactional Apply, immutable backups, rollback, and restore |
+| Phase 2 FCB layer | Complete; byte-exact round-trip and schema-gated multi-entry transactions in CLI and WPF |
+| Phase 3 texture layer | Complete; visibly modified BC3/XBT replacement passed real in-game render validation |
 | Phase 4 CLI | Complete; advertised verb contract and safety invariants are test-covered |
+| Phase 5 GUI | Complete; archive, texture, FCB, reference, pack, and mesh workflows use shared safety boundaries |
+| Phase 6 stretch recon | Complete; mesh viewer, material references, and static FBX export implemented; unverified mutation schemas fail closed |
 
 The authoritative technical handoff is in [`dunia-toolkit-fc5-spec.md`](dunia-toolkit-fc5-spec.md). Recon findings and acceptance gates are tracked in [`docs/recon/phase-0.md`](docs/recon/phase-0.md).
 
@@ -188,6 +194,7 @@ Warnings are treated as errors.
 - `FatV10DirectoryPackService` maps normalized relative paths to archive CRC64 identities, stages every input, rebuilds a new pair, and verifies every published replacement.
 - `DuniaResourceReferenceScanner` finds archive resource hashes in binary payloads across streaming buffer boundaries in little- and big-endian layouts.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
+- `XbgFbxExporter` validates complete geometry before emitting deterministic FBX 7.4 with LOD and material metadata.
 
 ## Archive inspection
 

@@ -50,6 +50,48 @@ public sealed class XbgMeshPreviewReaderTests
         Assert.Equal(20f, mesh.Lods[1].Distance);
     }
 
+    [Fact]
+    public void ExportFbxWritesAllLodsGeometryUvNormalsAndMaterialBindings()
+    {
+        using var input = new MemoryStream(BuildMesh(invalidIndex: false, lodCount: 2), writable: false);
+        XbgMeshPreview mesh = XbgMeshPreviewReader.Read(input);
+        using var output = new MemoryStream();
+
+        XbgFbxExporter.Export(mesh, output);
+
+        string fbx = Encoding.UTF8.GetString(output.ToArray());
+        Assert.StartsWith("; FBX 7.4.0 project file\n", fbx, StringComparison.Ordinal);
+        Assert.Equal(2, Count(fbx, "\tGeometry: "));
+        Assert.Contains("Model::LOD0_Section0", fbx, StringComparison.Ordinal);
+        Assert.Contains("Model::LOD1_Section0", fbx, StringComparison.Ordinal);
+        Assert.Contains("PolygonVertexIndex: *6", fbx, StringComparison.Ordinal);
+        Assert.Contains("LayerElementNormal", fbx, StringComparison.Ordinal);
+        Assert.Contains("LayerElementUV", fbx, StringComparison.Ordinal);
+        Assert.Contains("Material::Preview", fbx, StringComparison.Ordinal);
+        Assert.Contains("graphics\\\\preview.material.bin", fbx, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExportFbxRejectsAnInvalidSectionBeforeWriting()
+    {
+        var lod = new XbgMeshLod(
+            0,
+            [Vector3.Zero],
+            [Vector3.UnitZ],
+            [Vector2.Zero],
+            [new XbgMeshSection(0, [0, 1, 0])]);
+        var mesh = new XbgMeshPreview(null!, [], [lod]);
+        using var output = new MemoryStream();
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => XbgFbxExporter.Export(mesh, output));
+
+        Assert.Contains("triangle indices", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(output.ToArray());
+    }
+
+    private static int Count(string value, string pattern) =>
+        value.Split(pattern, StringSplitOptions.None).Length - 1;
+
     private static byte[] BuildMesh(bool invalidIndex, int lodCount = 1, int indexPaddingBytes = 0)
     {
         byte[] material = BuildMaterialChunk();

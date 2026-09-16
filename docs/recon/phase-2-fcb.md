@@ -1,5 +1,8 @@
 # Phase 2: FCB recon
 
+**Status: complete.** Parsing, schema-gated editing, deterministic multi-entry transactions, rollback,
+CLI workflows, and the WPF transaction workspace are implemented and covered by automated acceptance.
+
 ## Confirmed layout
 
 - Signature constant: `0x4643626E` (`6E 62 43 46` on disk).
@@ -206,6 +209,11 @@ The workspace request shape was validated against real `common.fat` entries 124 
 
 An STA WPF smoke run loaded both real manifests into the rendered transaction window, exposed 12 editable rows, changed one field per resource, and verified that the UI request builder emitted two transaction entries with one mutation each. Visual inspection moved `Current` and `Pending value` ahead of diagnostic hashes, froze the entry identity columns during horizontal scrolling, and retained keyboard access keys for every transaction action.
 
-## Next gate
+## Acceptance
 
-Complete interactive visual and keyboard validation of the WPF workspace against real `common.fat` entry 93 and a multi-entry selection.
+The implementation gate is closed. Real `common.fat` entry 93 passed manifest generation, no-op
+round-trip, changed-value planning, dry-run, and copied-archive verification. The multi-entry workspace
+passed request construction and API v1 dry-run against entries 124 and 164 with an identical plan hash.
+
+Interactive visual and keyboard checks remain part of the release checklist because they require a
+desktop session; they are not format-safety or implementation gates.

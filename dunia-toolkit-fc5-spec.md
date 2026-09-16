@@ -83,6 +83,22 @@ Flag these explicitly to whoever/whatever implements this — they're research s
 
 ## 6. Build phases
 
+Implementation status:
+
+| Phase | Status |
+|---|---|
+| 0 Recon | Complete: FAT v10, LZ4, independent extraction, in-game load, and restore validated |
+| 1 Archive | Complete: reader/writer, immutable backups, transactional Apply, restore, and rollback |
+| 2 FCB | Complete: byte-exact parser/writer and schema-gated multi-entry transactions |
+| 3 Textures | Complete: XBT/DDS/PNG, mip/channel inspection, transactions, and in-game validation |
+| 4 CLI | Complete: archive, texture, FCB, mesh, pack, reference, hash, and verification verbs |
+| 5 GUI | Complete: archive browser, staged texture replacement, FCB workspace, and mesh viewer |
+| 6 Stretch recon | Complete: verified mesh/material-reference subset and static FBX export; unverified mutation schemas fail closed |
+
+Phase 6 completed its mandatory recon gate with a verified static mesh/material-reference subset.
+Skinning, XBM mutation, and weather/time-of-day editors remain explicitly unsupported because no safe
+clean-room schema was established; placeholder editors are not considered completion.
+
 0. **Recon.** Unpack the same test archive with FCBConverter *and* one Ekey/ZenHAX binary tool. Diff the outputs. Confirm the byte layout is understood before a single line of your own parser is written.
 1. **Archive layer.** `.fat/.dat` reader + writer. `<archive>.original` backup-before-first-write, same pattern as Wildlands.
 2. **FCB layer.** Tree parser, hash→name resolution seeded from FCBConverter's list. Round-trip test: read → write → byte-diff against the original source file == 0.
