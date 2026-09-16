@@ -19,7 +19,7 @@ The project aims to provide one safe application for browsing, extracting, inspe
 - Stage modifications in memory before writing anything to disk.
 - Show every pending change and support explicit **Apply** or **Discard** actions.
 - Create permanent `.original` backups before the first archive write.
-- Expose the same core operations through a WPF application and CLI.
+- Expose the supported workflows through one WPF application.
 
 Skinning/skeleton export, XBM mutation, and specialized weather/time-of-day editing remain unsupported after the Phase 6 recon gate found no verified clean-room schemas. Unsupported layouts are rejected explicitly.
 
@@ -59,7 +59,7 @@ patch.dat          -> patch.dat.original
 
 An existing `.original` file is never overwritten. Backup publication is atomic, concurrent calls create exactly one backup, and temporary files are removed after success, failure, or cancellation.
 
-In-place CLI writes require an explicit `--confirm-write`, expected resource hashes, a stable source-pair fingerprint, verified `.original` backups, post-publication validation, and rollback on any failure. The game must be closed before invoking a write command.
+In-place writes require explicit confirmation, expected resource hashes, a stable source-pair fingerprint, verified `.original` backups, post-publication validation, and rollback on any failure. The game must be closed before applying changes.
 
 ## Current status
 
@@ -139,7 +139,16 @@ DuniaToolkit.slnx
 ## Requirements
 
 - Windows 10 or newer
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) or a newer SDK capable of targeting .NET 9
+- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) for the release build
+- .NET 9 SDK or newer only when building from source
+
+## Using the application
+
+1. Extract the release ZIP.
+2. Open the `gui` directory and run `Dunia.Toolkit.exe`.
+3. Select a Far Cry 5 `.fat` archive; the matching `.dat` file is detected automatically.
+4. Browse, preview, extract, or stage supported changes in the application.
+5. Use Dry-run before Apply and keep the generated `.original` backups.
 
 ## Build and test
 
@@ -195,110 +204,6 @@ Warnings are treated as errors.
 - `DuniaResourceReferenceScanner` finds archive resource hashes in binary payloads across streaming buffer boundaries in little- and big-endian layouts.
 - `XbgMeshPreviewReader` validates FC5 SDOL bounds, decodes multi-buffer vertex/index data, and exposes every declared LOD without WPF dependencies.
 - `XbgFbxExporter` validates complete geometry before emitting deterministic FBX 7.4 with LOD and material metadata.
-
-## Archive inspection
-
-Inspect and validate a FAT v10 index plus its adjacent DAT payload:
-
-```powershell
-dotnet run --project Dunia.Cli -- probe "D:\Games\Far Cry 5\data_final\pc\patch.fat"
-```
-
-List decoded entries. The default limit is 100; every entry is still parsed and checked against the paired DAT before output:
-
-```powershell
-dotnet run --project Dunia.Cli -- list "D:\Games\Far Cry 5\data_final\pc\common.fat" --limit 25
-```
-
-Extract one entry by its zero-based index. Existing output files are never overwritten:
-
-```powershell
-dotnet run --project Dunia.Cli -- get "D:\Games\Far Cry 5\data_final\pc\common.fat" 0 "entry-0.bin"
-```
-
-Build a separate archive pair with one or more uncompressed replacements. Source and existing output files are never modified:
-
-```powershell
-dotnet run --project Dunia.Cli -- rebuild "common.fat" "common.modified.fat" 12 "replacement.bin" 42 "other.bin"
-dotnet run --project Dunia.Cli -- apply "common.fat" --dry-run 12 "replacement.bin"
-dotnet run --project Dunia.Cli -- apply "common-copy.fat" --confirm-write 12 0123456789ABCDEF "replacement.bin"
-dotnet run --project Dunia.Cli -- restore "common-copy.fat" --confirm-write <fat-backup-sha256> <dat-backup-sha256>
-dotnet run --project Dunia.Cli -- verify roundtrip "common.fat"
-dotnet run --project Dunia.Cli -- verify replacement "common.fat" 0
-```
-
-Example output shape:
-
-```text
-path=D:\Games\Far Cry 5\data_final\pc\patch.fat
-length=...
-magic.ascii=...
-version.le=...
-version.be=...
-prefix.hex=...
-```
-
-Extract a DDS payload without overwriting an existing output file:
-
-```powershell
-dotnet run --project Dunia.Cli -- tex extract "input.xbt" "output.dds"
-dotnet run --project Dunia.Cli -- tex export-png "input.xbt" "output.png"
-dotnet run --project Dunia.Cli -- tex import "template.xbt" "replacement.dds" "output.xbt"
-dotnet run --project Dunia.Cli -- tex import-png "template.xbt" "replacement.png" "output.xbt"
-dotnet run --project Dunia.Cli -- tex archive-plan "common.fat" 40 0123456789ABCDEF "replacement.xbt"
-dotnet run --project Dunia.Cli -- tex archive-dry-run "common.fat" 40 0123456789ABCDEF "replacement.xbt"
-dotnet run --project Dunia.Cli -- tex archive-copy "common.fat" "common.texture-test.fat" <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
-dotnet run --project Dunia.Cli -- tex archive-apply "common.fat" --confirm-write <plan-sha256> 40 0123456789ABCDEF "replacement.xbt"
-dotnet run --project Dunia.Cli -- mips list "input.xbt"
-dotnet run --project Dunia.Cli -- mips export "input.xbt" ".\input-mips"
-dotnet run --project Dunia.Cli -- pack "common.fat" "common.mod.fat" ".\changed-resources"
-dotnet run --project Dunia.Cli -- refs "common.fat" 40 --names "archive-names.fc5.txt"
-```
-
-`pack` never modifies its source or overwrites an output pair. Every file path below the input directory is normalized and hashed as an FC5 resource path; unknown inputs and hash collisions fail before publication.
-
-Compute a normalized FC5 resource-path CRC64 or resolve one from a local one-path-per-line name list:
-
-```powershell
-dotnet run --project Dunia.Cli -- hash compute "graphics\example.xbt"
-dotnet run --project Dunia.Cli -- hash resolve 0123456789ABCDEF "paths.txt"
-dotnet run --project Dunia.Cli -- hash audit "common.fat" "paths.txt"
-dotnet run --project Dunia.Cli -- list "common.fat" --names "paths.txt"
-dotnet run --project Dunia.Cli -- entry "common.fat" 0 --names "paths.txt"
-```
-
-Blank lines and lines beginning with `#` or `;` are ignored. Multiple candidates for the same CRC64 are reported as collisions; unresolved entries remain explicit as `<unknown>`.
-`hash audit` exits with code `3` until the supplied catalog resolves every archive entry uniquely.
-
-Inspect an FCB using explicit CRC32 names and typed codecs, then require complete schema coverage:
-
-```powershell
-dotnet run --project Dunia.Cli -- fcb dump "input.fcb" --names "data\fcb-names.fc5.txt" --schema "data\fcb-schema.fc5.txt" --values
-dotnet run --project Dunia.Cli -- fcb schema-audit "input.fcb" "data\fcb-schema.fc5.txt"
-dotnet run --project Dunia.Cli -- fcb mutate "input.fcb" "output.fcb" "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb mutation-plan "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb mutation-template "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
-dotnet run --project Dunia.Cli -- fcb mutation-plan-batch "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
-dotnet run --project Dunia.Cli -- fcb archive-mutate-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb archive-mutate-copy "common.fat" "common.mutated.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb archive-mutate-apply "common.fat" --confirm-write 93 0514813338C00498 B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD "data\fcb-schema.fc5.txt" 0 0 E7046466 723A4D89 true
-dotnet run --project Dunia.Cli -- fcb archive-mutate-batch-dry-run "common.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
-dotnet run --project Dunia.Cli -- fcb archive-mutate-batch-copy "common.fat" "common.batch.fat" 93 0514813338C00498 "data\fcb-schema.fc5.txt" "mutations.tsv"
-dotnet run --project Dunia.Cli -- fcb archive-mutate-batch-apply "common.fat" --confirm-write 93 0514813338C00498 B499881AD3C7E7DA3DD846CBEAABAF7C7EAD094573196B3FB4285B8EE7378CAD "data\fcb-schema.fc5.txt" "mutations.tsv"
-dotnet run --project Dunia.Cli -- fcb transaction-plan "common.fat" "data\fcb-schema.fc5.txt" "transaction.tsv"
-dotnet run --project Dunia.Cli -- fcb transaction-dry-run "common.fat" "data\fcb-schema.fc5.txt" "transaction.tsv"
-dotnet run --project Dunia.Cli -- fcb transaction-copy "common.fat" "common.transaction.fat" "data\fcb-schema.fc5.txt" "transaction.tsv"
-dotnet run --project Dunia.Cli -- fcb transaction-apply "common.fat" --confirm-write <plan-sha256> "data\fcb-schema.fc5.txt" "transaction.tsv"
-```
-
-Schema records use `TYPE_HASH FIELD_HASH CODEC`. `schema-audit` exits with code `3` when any field is missing or incompatible.
-Batch mutation records use `NODE_INDEX<TAB>FIELD_INDEX<TAB>TYPE_HASH<TAB>FIELD_HASH<TAB>VALUE`; blank lines and lines beginning with `#` or `;` are ignored. Template values escape backslash, tab, CR, and LF as `\\`, `\t`, `\r`, and `\n`.
-Multi-entry transaction records prefix the same fields with `ENTRY_INDEX<TAB>RESOURCE_HASH<TAB>`. `transaction-plan` emits the plan SHA-256 required by confirmed transaction Apply.
-`fcb mutate` requires both node/field indexes and their expected hashes, refuses referenced fields and existing outputs, then atomically publishes only a verified result.
-`fcb archive-mutate-dry-run` additionally requires the expected 64-bit resource hash and deletes its rebuilt pair after end-to-end verification.
-`fcb archive-mutate-copy` repeats that verification before publishing a separate FAT/DAT pair and refuses existing destination files.
-`fcb archive-mutate-apply` requires the exact source payload SHA-256 emitted by `mutation-plan`, then creates immutable `.original` backups, re-extracts and hashes the published replacement, reparses and schema-audits the FCB, and rolls back both archive files on any mismatch, exception, or cancellation.
-Batch copy and apply revalidate the complete mutation under the FAT/DAT read lock. Apply additionally uses the source SHA-256 emitted by `mutation-plan-batch` and verifies every requested field before committing the archive transaction.
 
 ## Correctness requirements
 
