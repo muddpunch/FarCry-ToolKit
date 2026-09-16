@@ -14,5 +14,7 @@
   <ItemGroup>
     <Content Include="..\data\fcb-schema.fc5.txt" Link="data\fcb-schema.fc5.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\data\fcb-names.fc5.txt" Link="data\fcb-names.fc5.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

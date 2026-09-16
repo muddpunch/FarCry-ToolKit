@@ -6,6 +6,8 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <Authors>Dunia Toolkit contributors</Authors>
+    <Copyright>Copyright (c) 2026 Dunia Toolkit contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 </Project>
-

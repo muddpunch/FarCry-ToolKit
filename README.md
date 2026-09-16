@@ -313,6 +313,22 @@ There is no complete independent FC5 format specification. Correctness therefore
 
 Game-derived fixtures must remain local. Do not commit Ubisoft assets, extracted resources, or proprietary reference binaries.
 
+## Limitations
+
+- Only confirmed Far Cry 5 FAT v10 layouts are writable. Unknown versions, encrypted entries, SubFAT layouts, and unsupported compression modes fail closed.
+- XBG decoding covers validated FC5 geometry layouts. Unsupported vertex layouts are rejected; skinning, skeletons, animations, collision, and XBG re-encoding are not supported.
+- FBX export contains static geometry, all decoded LODs, normals, UVs, sections, and material references. It does not contain rigs or skin weights.
+- Material inspection exposes verified LTMR slot names and paths only. XBM parameter mutation and automatic material/texture reconstruction are not supported.
+- Weather and time-of-day have no verified FC5 curve schema, so no specialized editor is provided. Confirmed fields can still be edited through the schema-gated FCB workspace.
+- PNG import is limited to validated 2D BC1/BC2/BC3/BC4/BC5/BC7 templates; arrays, cubemaps, volumes, HDR, interlaced PNGs, and unsupported layouts are rejected.
+- Name resolution depends on user-supplied or bundled clean-room name catalogs. Unknown hashes remain explicit and are never guessed.
+- Published binaries are framework-dependent and require the .NET 9 Desktop Runtime on Windows 10 or newer.
+- Archive modification is inherently risky. Close the game, run Dry-run first, retain `.original` backups, and never use the toolkit against multiplayer services or a running process.
+
+## License
+
+Dunia Toolkit is released under the [MIT License](LICENSE). Third-party components and adapted permissive references retain their own notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Prior art and licensing
 
 - [Gibbed.Dunia](https://github.com/gibbed/Gibbed.Dunia) is zlib-licensed and provides explicit FAT v10/v11 serializers plus FC5 pack/unpack projects.
@@ -321,7 +337,7 @@ Game-derived fixtures must remain local. Do not commit Ubisoft assets, extracted
 - [FC5ArchiveViewer](https://github.com/JakubMarecek/FC5ArchiveViewer) is GPLv3 and must not be copied into a permissively licensed implementation.
 - [WildlandsToolkit](https://github.com/AlphaGlyph1371/WildlandsToolkit) provides architecture and UX inspiration only; its `.forge` parsing code is unrelated to Dunia FAT/DAT archives.
 
-The repository does not currently contain a project license. Add one before distributing binaries or accepting substantial third-party contributions.
+Project code is licensed under MIT. Third-party notices must remain included in source and binary distributions.
 
 ## Disclaimer
 
