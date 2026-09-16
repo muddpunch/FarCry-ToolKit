@@ -4,6 +4,7 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>Dunia.Toolkit</RootNamespace>
+    <ApplicationIcon>..\assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Dunia.Formats/Dunia.Formats.csproj" />

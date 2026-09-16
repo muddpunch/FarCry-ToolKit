@@ -1,5 +1,7 @@
 # Dunia Toolkit
 
+![Dunia Toolkit — archive, texture, FCB, and mesh tooling](assets/readme-hero.png)
+
 Modding toolkit for the PC version of **Far Cry 5**, built with C#/.NET 9 and WPF.
 
 The project aims to provide one safe application for browsing, extracting, inspecting, replacing, and rebuilding local Dunia 2 game resources. It targets offline game files only and does not interact with multiplayer services, anti-cheat, process memory, or a running game.
@@ -138,14 +140,14 @@ DuniaToolkit.slnx
 
 ## Requirements
 
-- Windows 10 or newer
-- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0) for the release build
+- 64-bit Windows 10 or newer
+- No separate .NET installation is required for the self-contained release
 - .NET 9 SDK or newer only when building from source
 
 ## Using the application
 
-1. Extract the release ZIP.
-2. Open the `gui` directory and run `Dunia.Toolkit.exe`.
+1. Extract the standalone release ZIP.
+2. Run `Dunia.Toolkit.exe`.
 3. Select a Far Cry 5 `.fat` archive; the matching `.dat` file is detected automatically.
 4. Browse, preview, extract, or stage supported changes in the application.
 5. Use Dry-run before Apply and keep the generated `.original` backups.
